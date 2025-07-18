@@ -10,7 +10,7 @@ This project is currently under active development. Features may change, and doc
 **Media sorting utilizing booru-style tags.**  
 Inspired by popular booru imageboards, BooruSort allows you to sort and manage large collections of media files using a tag-based prioritization system.
 
-> BooruSort is **not affiliated** with any existing imageboards — it's simply inspired by their tagging systems.
+> BooruSort is **not affiliated** with any existing imageboards — it's simply inspired by their tagging systems. Please check out [Danbooru GitHub repository](https://github.com/danbooru/danbooru)
 
 
 **Features**
