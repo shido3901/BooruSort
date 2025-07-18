@@ -18,7 +18,7 @@ Inspired by popular booru imageboards, BooruSort allows you to sort and manage l
 - easy import process, allows importing of thousands of media files and tags.
 - auto-tagging: tag manager system allows automated tagging and batch edits.
 - very simple ui and navigation. large media viewer with grid-layout and flow-layout.
-- built-in integration with **mpv media player** for smooth video playback**.
+- built-in integration with **mpv media player** for smooth video playback.
 
 ## Third-Party Software Notice
 
