@@ -22,7 +22,7 @@ Inspired by popular booru imageboards, BooruSort allows you to sort and manage l
 
 ## Third-Party Software Notice
 
-This project uses the following third-party software:
+BooruSort uses the following third-party software:
 
 - **mpv media player** ([GPLv2+](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)) – https://mpv.io/  
 - **FFmpeg** ([LGPL/GPL](https://ffmpeg.org/legal.html)) – https://ffmpeg.org/
