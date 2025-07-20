@@ -1,5 +1,6 @@
-from PyQt5.QtWidgets import QMessageBox, QCheckBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QMessageBox, QCheckBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton, QWidget, QLayout, QSizePolicy, QHBoxLayout, QLineEdit
+from PyQt5.QtCore import Qt, QRect, QSize, QPoint, QEvent
+from PyQt5.QtGui import QPalette, QColor
 
 class MessageBox:
     ICONS = {

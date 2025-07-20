@@ -2,6 +2,8 @@ import sqlite3
 from config.profile_config import CategoryManager
 from config.ui_config import MessageBox
 
+
+
 class BooruDb():
     def __init__(self, db_name="booru.db", main_window=None):
 
@@ -81,6 +83,16 @@ class BooruDb():
         """)
 
         self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tag_group (
+                parent_tag_id INTEGER,
+                child_tag_id INTEGER,
+                PRIMARY KEY (parent_tag_id, child_tag_id),
+                FOREIGN KEY (parent_tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+                FOREIGN KEY (child_tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+        """)
+
+        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS tag_pairs (
                 tag_id INTEGER,
                 pair_id INTEGER,
@@ -98,6 +110,8 @@ class BooruDb():
 
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id ON file_tags(tag_id)")
         self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_file_tags_file_id ON file_tags(file_id)")
+
+        self.cursor.execute("CREATE INDEX IF NOT EXISTS idx_tag_group_child ON tag_group(child_tag_id)")
 
         self.conn.commit()
 
@@ -211,6 +225,9 @@ class BooruDb():
                 "count": tag_count
             }
 
+
+
+
         
         #print(f"current tag list is {self.tag_list}")
         self.cursor.execute("SELECT COUNT(*) FROM tags WHERE profile_id = ?", (self.profile_id,))
@@ -298,6 +315,7 @@ class BooruDb():
             self.set_window_title()
 
             self.cursor.executemany("INSERT OR IGNORE INTO category_tag (category_id, tag_id) VALUES (?, ?)", category_tag_pair)
+            print('success')
 
     def add_items(self, item_list):
 
@@ -305,11 +323,37 @@ class BooruDb():
         with self.conn:
             self.cursor.executemany("INSERT INTO files (path, thumbnail_name, profile_id) VALUES (?, ?, ?)", data)
 
+    def add_group(self, group_list):
+        
+        with self.conn:
+            self.cursor.executemany("INSERT INTO tag_group (parent_tag_id, child_tag_id) VALUES (?, ?)", group_list)
+
+    def load_group(self):
+
+        self.cursor.execute("""
+            SELECT parent.name, child.name
+            FROM tag_group tg
+            JOIN tags parent ON tg.parent_tag_id = parent.id
+            JOIN tags child ON tg.child_tag_id = child.id
+            WHERE parent.profile_id = ? AND child.profile_id = ?
+        """, (self.profile_id, self.profile_id))
+        tag_pairs = self.cursor.fetchall()
+
+        return tag_pairs
+
+    def get_tag_id(self, tag_list):
+
+        placeholders = ", ".join(["?"] * len(tag_list))
+        query = f"SELECT id, name FROM tags WHERE name IN ({placeholders}) AND profile_id = ?"
+
+        params = tag_list + [self.profile_id]
+        self.cursor.execute(query, params)
+        tag_ids = self.cursor.fetchall()
+        return tag_ids
+
     def delete_profile(self, name):
 
         pass
-
-
 
     def delete_category(self, name):
 
