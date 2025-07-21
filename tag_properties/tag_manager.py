@@ -116,16 +116,13 @@ class TagManager(QDialog):
         self.load_list()
         self.load_proxy()
 
-        tag_pairs = self.booru_db.load_group()
+        self.tag_pairs = self.booru_db.load_group()
 
-        self.tag_group = defaultdict(list)
+        self.tag_group_list = {child: parent for parent, child in self.tag_pairs}
+
+
+        print(self.tag_group_list)
       
-        for parent_name, child_name in tag_pairs:
-            if parent_name in self.tag_list:
-                parent_info = self.tag_list[parent_name]
-                category = parent_info.get('category')
-                color = parent_info.get('color')
-                self.tag_group[child_name].append((parent_name, category, color))
 
         
 

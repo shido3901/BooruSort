@@ -1,6 +1,9 @@
-from PyQt5.QtWidgets import QMessageBox, QCheckBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton, QWidget, QLayout, QSizePolicy, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem
+from PyQt5.QtWidgets import (QMessageBox, QCheckBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton, 
+                             QWidget, QLayout, QSizePolicy, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem)
 from PyQt5.QtCore import Qt, QRect, QSize, QPoint, QEvent
 from PyQt5.QtGui import QPalette, QColor
+
+from collections import defaultdict
 
 class TagBox(QWidget):
     def __init__(self, db, taglist, tm, s):
@@ -14,13 +17,25 @@ class TagBox(QWidget):
         self.source = s
         self.tag_manager = tm
 
-        self.tag_group_list = self.tag_manager.tag_group
+        self.tag_group_list = self.tag_manager.tag_group_list #parent -> child
 
         print(self.tag_group_list)
 
         self.booru_db = db
         self.list_view = self.tag_manager.list_view
         self.tag_list = taglist
+
+        if self.source == 1:
+
+            self.tag_pairs = self.tag_manager.tag_pairs
+            
+            self.parent_tag_list = defaultdict(list)
+            for parent, child in self.tag_pairs:
+                self.parent_tag_list[parent].append(child)
+
+            print(self.parent_tag_list)
+
+       
 
         self.tag_window_widget = QWidget()
         self.tag_window_widget.setMinimumHeight(100)
@@ -55,11 +70,13 @@ class TagBox(QWidget):
         self.tag_window_widget.installEventFilter(self)
         self.tag_box_entry.installEventFilter(self)
 
-        self.tag_list = {} #name, color, count, etc
+     
         self.tag_box_list = {} #tags in box
 
         self.tag_color = "#FFFFFF"
         self.category_name = "tags"
+
+      
 
 
         self.load_cat_list()
@@ -67,29 +84,52 @@ class TagBox(QWidget):
         self.initUI()#located at bottom
 
 
+
+    #this part kina cancer ima re do this. Its functional but kina hard to read
     def add_tagd(self, tag_name, cat_name, tag_color):
 
-        if tag_name in self.tag_group_list:
-            in_group = True
-            
-            for parent_name, category, color in self.tag_group_list[tag_name]:
-                    self.tag_check(parent_name, category, color)
+        if tag_name in self.tag_group_list and self.source == 0:
+            parent_tag_name = self.tag_group_list[tag_name]
 
+            parent_cat_name = self.tag_list[parent_tag_name]["category"]
+            color = self.tag_list[parent_tag_name]["color"]
+            border_color = color
+
+            if (parent_tag_name, parent_cat_name) not in self.tag_box_list:
+
+                self.add_tag_widget_to_box(parent_tag_name, parent_cat_name, color, border_color)
         else:
-            color = None
-            in_group = False
+            border_color = None
+
+        if (tag_name, cat_name) not in self.tag_box_list:
+
+        
+            self.add_tag_widget_to_box(tag_name, cat_name, tag_color, border_color)
+
+        if self.source == 1:
+
+            if tag_name in self.parent_tag_list:
+                
+                child_tag_name_list = self.parent_tag_list[tag_name]
+                for child_tag_name in child_tag_name_list:
+
+                    child_cat_name = self.tag_list[child_tag_name]["category"]
+                    color = self.tag_list[child_tag_name]["color"]
+
+                    print(child_tag_name, child_cat_name, color)
+
+                    self.tag_manager.tag_group_bottom_box.add_tagd(child_tag_name, child_cat_name, color)
+                    self.tag_manager.tag_group_bottom_box.add_back_text_box_entry()
+
+        
+    def add_tag_widget_to_box(self, tag_name, cat_name, tag_color, border_color):
 
             
-        category_name = cat_name
-        
         self.flow_layout.removeWidget(self.tag_box_entry)
 
-        self.tag_icons = TagIcon(name=tag_name, cat_name=cat_name,
-                                    color=tag_color, restore=self.restore_tag,
-                                    parent_color=color, group=in_group)
-        in_group = False
+        self.tag_icons = TagIcon(name=tag_name, cat_name=cat_name, color=tag_color, restore=self.restore_tag, border_color=border_color)
         
-        self.tag_box_list[tag_name, category_name] = self.tag_icons
+        self.tag_box_list[tag_name, cat_name] = self.tag_icons
 
         if len(self.tag_box_list) < 100:
         
@@ -121,20 +161,15 @@ class TagBox(QWidget):
             self.add_back_text_box_entry()
             self.tag_box_entry.clear()
 
-    def tag_check(self, tag_name, category_name, color=None):
+    def tag_check(self, tag_name, category_name,):
 
+        name = tag_name.lower().replace("_"," ")
+        tag_name = name
 
-            name = tag_name.lower().replace("_"," ")
-            tag_name = name
+        if (tag_name, category_name) not in self.tag_box_list:
 
-            if (tag_name, category_name) not in self.tag_box_list:
-
-                if color is None:
-
-                    color = self.tag_color
-                self.add_tagd(tag_name, category_name, color)
-
-            
+            color = self.tag_color
+            self.add_tagd(tag_name, category_name, color)
 
     def delete_tags(self):
         if self.tag_box_list:
@@ -309,33 +344,29 @@ class TagBox(QWidget):
         self.delete_button.clicked.connect(self.delete_tags)
 
 class TagIcon(QPushButton):
-    def __init__(self, name, cat_name, color, restore, parent_color=None, group=False):
-
-        group = group
+    def __init__(self, name, cat_name, color, restore, border_color):
 
         tag_name = name
-        tag_color = color
 
-        if group is True:
-            self.border_color = parent_color
-        else:
-            self.border_color = color
+        if border_color is None:
+            border_color = "#2C3539"
+
         super().__init__(f"{tag_name} x")
 
         restore_tag = restore 
-        self.update_color(tag_color)
+        self.update_color(color, border_color)
 
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setCursor(Qt.PointingHandCursor)
         self.clicked.connect(lambda checked, tag_name=tag_name, category_name=cat_name, widget=self: restore_tag(tag_name, category_name, widget))
 
-    def update_color(self, tag_color):
+    def update_color(self, tag_color, border_color):
 
         self.setStyleSheet(f"""
         background-color: #2C3539;
         color: {tag_color};
         border: 1px solid;
-        border-color: {self.border_color};
+        border-color: {border_color};
         border-radius: 6px;
         font-size: 20px;
         padding: 6px 10px;
