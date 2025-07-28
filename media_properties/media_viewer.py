@@ -1,280 +1,446 @@
-from PyQt5.QtWidgets import QLabel, QSizePolicy, QWidget, QGridLayout, QApplication, QApplication, QVBoxLayout, QLayout
-from PyQt5.QtCore import Qt, QEvent, pyqtSignal, QPoint, QRect, QUrl, QMimeData, QSize
-from PyQt5.QtGui import QPixmap, QCursor, QPainter, QColor, QPen, QImageReader
+from PyQt5.QtWidgets import QLabel, QSizePolicy, QWidget, QGridLayout, QApplication, QApplication, QVBoxLayout, QLayout, QScrollArea, QHBoxLayout
+from PyQt5.QtCore import Qt, QEvent, pyqtSignal, QPoint, QRect, QUrl, QMimeData, QSize, QThread, QObject, QTimer, QThreadPool, QRunnable
+from PyQt5.QtGui import QPixmap, QCursor, QPainter, QColor, QPen, QImageReader, QImage
 
 from media_properties.media_display import MediaDisplayWindow
+import time
+
+
 
 
 import os, json, sqlite3
 
 class MediaManager(QWidget):
     changeSize = pyqtSignal()
-    def __init__(self, booru_db, parent=None):
-        super().__init__(parent)
+    def __init__(self, booru_db, main_area, main_area_layout):
+        super().__init__()
+
+        self.current_page = 1
+        self.total = 0
+        self.total_pages = 0
+        self.total_items = 0
+        self.current_layout = 1
+
 
         self.booru_db = booru_db
 
-        self.media_layout = FlowLayout()
-        self.setLayout(self.media_layout)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-        self.installEventFilter(self)
-
-        self.selection_box = DragSelectionBox(self)
-     
-        self.image_size = 2
-
-        self.windows = []
-
-        self.image_cell_width = 300
-        self.image_cell_height = 375
-
-        self.cell_size_width = 315
-        self.cell_size_height = 390
-     
-        self.num_cols = 0
-        self.num_rows = 0
-
-        self.max_column = 6
-        self.row = 2
-
-        self.starting_count = 0
-        self.entity_count = 0
+        self.main_area = main_area
+        self.main_area_layout = main_area_layout
         
-        self.current_page = 1
-        self.page_count = 0
+
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+
+        container = QWidget()
+        container.setMinimumSize(10,10)
+        self.media_layout = FlowLayout(container, spacing=20, justify_rows=True)
+        container.setLayout(self.media_layout)
+      
+        self.scroll_area.setWidget(container)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.scroll_area)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
         
-        self.amount_on_current_page = 0
-        self.total_on_screen = 0 #images + blank frames
+        self.setMinimumWidth(10)
+        self.setStyleSheet("color: transparent; border-color: none;")
+     
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+       
+    
+        self.thumbnail_sizes = [128, 256, 384, 512]  
+        self.current_size_index = 1
+        self.img_size = 256
 
-        self.image_size_selection = 2
-
-        self.tag_name = None
-
-        self.image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']
-        self.video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.webm']
+        self.items_per_page = 25
+        self.amount_per_page = [25, 50, 75, 100]  
+        self.current_amount_index = 4
 
         self.selected_file_paths = []
         self.selected_entities = []
-        self.widgets_list = []
-        self.file_paths = []
+
+        self.thumbnail_list = []
+
+        self.search_queue = []
+
+        self.windows = []
+
+
+        
 
         self.crtl_a = False
         self.enter = False
         self.click = None
 
+        
+
+        self.timer_start = None
+        self.timer_end = None
+
+
+        self.previous_name = None
+        self.search_results = None
+
+        self.mouse_clicked = False
+        self.hover = False
+
+        self.crtl = False
+
+        self.page_count = 0
+      
+        self.threadpool = QThreadPool()
+
+
+    def on_hover(self, type):
+
+        if type == 1:
+            self.hover = True
+           
+        else:
+            self.hover = False
+
+
+    def set_preview(self, preview_img, file_path):
+
+        preview_img = preview_img.scaledToHeight(self.img_size, Qt.SmoothTransformation)
+
+        widget = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(6,6,6,6)
+        layout.setSpacing(12)
+
+        img_label = QLabel()
+        img_label.setPixmap(preview_img)
+        img_label.setFixedSize(preview_img.size())
+        layout.addWidget(img_label)
+
+        if file_path not in self.selected_file_paths or len(self.selected_file_paths) <= 1:
+            file_urls = [QUrl.fromLocalFile(file_path)]
+
+            if self.crtl is False:
+
+                self.unselect_all()
+            
+        else:
+
+            file_urls = [QUrl.fromLocalFile(path) for path in self.selected_file_paths if os.path.exists(path)]
+
+            
+
+            # Text label
+            text_label = QLabel(f"+{len(self.selected_file_paths) - 1}")
+            layout.addWidget(text_label)
+
+            
+            # Render widget to pixmap
+            
+            
+
+        widget.setLayout(layout)
+        widget.adjustSize()
+
+        self.preview_image = widget.grab()
+
+
+        if file_urls:
+
+            self.mime_data = QMimeData()
+            self.mime_data.setUrls(file_urls)
+
+    
+       
+
     def search(self, list):
-        self.load_tag_name(list)
+        self.load_tag_name(list) 
+
+    def set_amount(self):
+
+        self.current_amount_index = (self.current_amount_index + 1) % len(self.thumbnail_sizes)
+        self.items_per_page = self.amount_per_page[self.current_amount_index]
+
+        self.search_results.thumbnails.clear()
+
+
+        self.load_thumbnails(self.file_info)
 
         
 
-
-       
+        #print(self.amount)
 
     def set_image_size(self):
-        print('yo')
-        #self.changeSize.emit()
-        self.thumbnail.change_size()
-
-   
-      
-
-    def clear_image_area(self):
-
-        while self.media_layout.count():
-            child = self.media_layout.takeAt(0)
-            if child.widget():
-               child.widget().deleteLater()
-
-        self.entity_count = 0
-        self.page_count_text.setText("")
-
-    def refresh_image_area(self, image_area_layout):
-
-      
-                        
-              
-            self.total_on_screen 
-           
-                        
-
-
-            while image_area_layout.count():
-                child = image_area_layout.takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-
-            self.current_page = (self.starting_count // self.total_on_screen) + 1 if self.total_on_screen > 0 else 1
-            self.page_count = (self.entity_count + self.total_on_screen - 1) // self.total_on_screen if self.total_on_screen else 1 
-
-            if self.entity_count > 0:
-
-                self.page_count_text.setText(f"Page {self.current_page} of {self.page_count}, {self.entity_count} item{'s' if self.entity_count != 1 else ''}")
-            else:
-                self.page_count_text.setText(f"no items found")
-
-            self.add_image_to_area(image_area_layout)
+        
+        self.current_size_index = (self.current_size_index + 1) % len(self.thumbnail_sizes)
+        self.img_size = self.thumbnail_sizes[self.current_size_index]
     
-    def set_page_count(self, text):
-        self.page_count_text = text
+        for page_key in ("current", "next", "previous"):
+            for thumbnail in self.search_results.thumbnails[page_key]:
+                thumbnail.change_size(self.img_size)
+
 
     def load_tag_name(self, tag_names):
 
-        #self.booru_db.load_items(tag_names)
-       
+        file_list = self.booru_db.files.load_file_info(tag_names)
 
-        try:
-            with open('profiles.json', 'r') as f:
-                selected_user = json.load(f)
-                self.current_user = selected_user["current_profile"]
-        except FileNotFoundError:
-           print("no json yet")
+        self.batch_size = 25
+        self.current_batch_index = 0     
 
-        if self.current_user != None:
-            self.nested_directory = f"{self.current_user}"
+        if file_list:
 
-            conn = sqlite3.connect("booru.db")
-            cursor = conn.cursor()
+            self.load_thumbnails(file_list)
 
-            cursor.execute("SELECT id FROM profiles WHERE profile_name = ?", (self.current_user,))
-            user = cursor.fetchone()
-            user_id = user[0]
+        else:
+            self.previous_name = None
+            self.clear_layout()
+            print('implement empty box message')
 
-            get_tags = ','.join(['?'] * len(tag_names))
-            query = f"SELECT id FROM tags WHERE name IN ({get_tags}) AND profile_id = ?"
+    def set_ctrl(self, type):
+        self.crtl = type
 
-            params = tag_names + [user_id]
-            cursor.execute(query, params)
-            tag_ids = cursor.fetchall()
-
-            tag_ids_flat = [row[0] for row in tag_ids]
-
-            placeholders = ','.join(['?'] * len(tag_ids_flat))
-            query = (f"SELECT file_id FROM file_tags WHERE tag_id IN ({placeholders}) GROUP BY file_id HAVING COUNT(DISTINCT tag_id) = ?")
-
-            params = tag_ids_flat + [len(tag_ids_flat)]
-            cursor.execute(query, params)
-            file_ids = cursor.fetchall()
-
-            file_id_list = [row[0] for row in file_ids]
-
-            placeholders = ",".join("?" for _ in file_id_list)
-            cursor.execute(f"SELECT path, thumbnail_name, length, type FROM files WHERE id IN ({placeholders})", file_id_list)
-            self.file_paths_list = cursor.fetchall()
+        print(self.crtl)
 
 
-            self.entity_count = len(self.file_paths_list)
-            print(self.entity_count)
-
-            conn.close()
-
-        self.starting_count = 0
-   
-        self.add_image_to_area(self.media_layout)
-
-    def left_click(self, key):
-        original_file_path = key
-
-        tag_name = self.tag_name
-
-        if original_file_path not in self.selected_file_paths:
-            self.viewer = MediaDisplayWindow(original_file_path, tag_name, self.booru_db)
-           
-            self.windows.append(self.viewer)
-            self.viewer.show()
-
-            #self.refresh_image_area(self.media_layout)
+    def left_click(self, file_paths):
             
-    def right_click(self, key):
-        print(f'delete {key}?')
+        tag_name = None
+
+        self.viewer = MediaDisplayWindow(file_paths, tag_name, self.booru_db)
         
-    def add_image_to_area(self, image_area_layout):
+        self.windows.append(self.viewer)
+        self.viewer.show()
 
-        self.max_column = 3
-       
-        row = 0
-        col = 0
-        self.amount_on_current_page = 0
-        
-        if self.entity_count > 0: 
+        self.selected_file_paths.clear()
 
-            path = f"{self.current_user}/thumbnails/"
+        self.unselect_all()
 
-            max_height = self.height()
-            print(f"max height is {max_height}")
+        #self.refresh_image_area(self.media_layout)
+    
+    def refresh_layout(self):
 
-            count = 0
+        self.clear_layout()
+        self.loaded = True
+        self.display_thumbnails()
 
-            for name, thumb_name, length, type in self.file_paths_list:
+    def clear_layout(self):
 
-                thumbnail_path = path + thumb_name
-               
-                self.thumbnail = ThumbnailIcon(name, thumbnail_path, length, type)
-                self.thumbnail.clicked.connect(self.left_click)
+        while self.media_layout.count():
+                item = self.media_layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
 
-                count += 1
-                self.media_layout.addWidget(self.thumbnail)
-                if count == 50:
-                    break
+    def unselect_all(self):
+        for page_key in ("current", "next", "previous"):
+            for thumbnail in self.search_results.thumbnails[page_key]:
+                thumbnail.unselect()
 
    
-            
+    def load_thumbnails(self, file_list):
 
-    def ctrl_a(self):
+        if self.search_results is not None:
+            self.search_results.thumbnails.clear()
 
-        self.crtl_a = True
-      
-    
-    def eventFilter(self, source, event):
-        if event.type() == QEvent.Wheel:
-            delta = event.angleDelta().y()
-            if delta > 0:
-                self.previous_page()
-            else:
-                self.next_page()
-            self.selection_box.end_point = event.pos()
-            self.selection_box.update()
-            self.selection_box.start_point = None
-            self.selection_box.end_point = None
+        self.file_info = file_list
+
+        self.current_page = 1
+        self.thumbnail_directory = f"{self.booru_db.current_profile}/thumbnails/"
         
-            return True
-        return super().eventFilter(source, event)
-    
-    def mousePressEvent(self, event):
+        class SearchResults(QObject):
+            def __init__(self, file_list, media_manager):
+                super().__init__()
 
-        if event.button() == Qt.LeftButton:
-            if self.enter == False:
-                self.click = True
-                self.selection_box.start_point = event.pos()  
-                self.selection_box.end_point = event.pos() 
-                self.selection_box.setGeometry(self.rect())
-                self.refresh_image_area(self.media_layout) 
+                self.file_list = file_list
+                self.media_manager = media_manager
 
-                self.selection_box.raise_()
-                self.selection_box.setVisible(True) 
-                self.selection_box.update()
-
-                self.selected_entities = []
-                self.selected_file_paths = []
+                self.total = len(file_list)
                 
-    def mouseMoveEvent(self, event):
-
-        if self.click == True:
-           
-            if self.selection_box.start_point:
-                self.selection_box.end_point = event.pos()
-                self.selection_box.update()  
+                self.thumbnails = {
+                    "previous": [],
+                    "current": [],
+                    "next": []
+                }
             
-    def mouseReleaseEvent(self, event):
+                self.create_batch(thumbnail_page_type=["current", "next", "previous"])
 
-        if event.button() == Qt.LeftButton:
-            self.click = False
-            self.selection_box.end_point = event.pos()
-            self.selection_box.update()
-            self.selection_box.start_point = None
-            self.selection_box.end_point = None
-           
-           
+            def create_batch(self, thumbnail_page_type):
+
+                render_batch = self.media_manager.get_pagination_ranges(
+                    total=self.total, 
+                    items_per_page=self.media_manager.items_per_page, 
+                    current_page=self.media_manager.current_page
+                    )
+                
+                for self.page_key in thumbnail_page_type:
+                    page_range = render_batch[self.page_key]
+
+                    if page_range is None:
+                        continue
+
+                    self.start, self.end = page_range
+                    self.batch = []
+
+                    self.thumbnail_directory = self.media_manager.thumbnail_directory
+
+                    for path, thumbnail_name, length, media_type in self.file_list[self.start:self.end]:
+                        thumbnail_path = self.thumbnail_directory + thumbnail_name
+                        self.batch.append((path, thumbnail_path, length, media_type))
+
+                    worker = ImageWorker(self.batch, self.page_key, parent=self)
+                    worker.signals.images_ready.connect(self.display_thumbnails)
+                    self.timer_start = time.perf_counter()
+                
+                    self.media_manager.threadpool.start(worker)
+
+            def display_thumbnails(self, thumbnail_list, key): 
+                
+                for path, thumbnail_img, length, media_type in thumbnail_list:
+
+                    pixmap = QPixmap.fromImage(thumbnail_img)
+
+                    # this is a crime
+                    thumbnail_icon = ThumbnailIcon(path, pixmap, length, media_type, size=self.media_manager.img_size, 
+                                                   left_click=self.media_manager.left_click, file_paths=self.media_manager.selected_file_paths, 
+                                                   on_hover=self.media_manager.on_hover, pre_loaded_thumbs=self.thumbnails, preview=self.media_manager.set_preview,
+                                                   media_manager=self.media_manager)
+                    
+
+                    self.thumbnails[key].append(thumbnail_icon)
+
+                if key == "current":
+                    self.media_manager.clear_layout()
+
+                    for thumbnails in self.thumbnails["current"]:
+                        self.media_manager.media_layout.addWidget(thumbnails)
+                        
+                    elapsed = time.perf_counter() - self.timer_start
+
+                    print(f"{key} generated and displayed in {elapsed}s")
+
+                else:
+                    self.loaded = True
+
+                        
+
+                #print(f" LENGTH OF PREVIOUS: {len(self.thumbnails["previous"])}")
+                #print(f" LENGTH OF CURRENT: {len(self.thumbnails["current"])}")
+                #print(f" LENGTH OF NEXT: {len(self.thumbnails["next"])}")
+
+            def load_page(self, page):
+                printed = 0   
+
+
+                #0 = load previous, else load next page
+
+                if self.loaded is True:
+                    print('locked')
+                    self.loaded = False
+
+                    load_page = "previous" if page==0 else "next"
+                    shift_page = "next" if page==0 else "previous"
+
+                    for thumbnails in self.thumbnails[load_page]:
+                        self.media_manager.media_layout.addWidget(thumbnails)
+                        printed += 1
+                        
+
+                    self.thumbnails[shift_page] = self.thumbnails["current"].copy()
+                    self.thumbnails["current"].clear()
+
+                    self.thumbnails["current"] = self.thumbnails[load_page].copy()
+                    self.thumbnails[load_page].clear()
+
+                    self.create_batch(thumbnail_page_type=[load_page])
+
+                    self.media_manager.set_page_count(self.media_manager.page_count_label)
+                    print(f"loaded {printed} imgs")
+
+                        
+        class ImageWorkerSignals(QObject):
+            images_ready = pyqtSignal(object, str)
+
+        class ImageWorker(QRunnable):
+            def __init__(self, batch_info, page_key, parent=None):
+                super().__init__()
+
+                self.signals = ImageWorkerSignals(parent)
+                self.batch_info = batch_info
+                self.key = page_key
+
+                self.thumbnail_info = []
+
+            def run(self):
+
+                for path, thumbnail_path, length, media_type in self.batch_info:
+                    thumbnail_img = QImage(thumbnail_path)
+                    self.thumbnail_info.append((path, thumbnail_img, length, media_type))
+
+                self.signals.images_ready.emit(self.thumbnail_info, self.key)
+        
+        self.search_results = SearchResults(file_list, media_manager=self)
+        
+    def get_pagination_ranges(self, total, items_per_page, current_page):
+        self.page_count = (total + items_per_page - 1) // items_per_page
+        self.total_items = total
+
+        self.set_page_count(self.page_count_label)
+
+
+        def get_page_range(page):
+            
+            start_index = (page - 1) * items_per_page
+            end_index = min(start_index + items_per_page, total)
+            return start_index, end_index
+    
+        current_range = get_page_range(current_page)
+
+        previous_page = current_page - 1 if current_page > 1 else self.page_count
+        next_page = current_page + 1 if current_page < self.page_count else 1
+
+        previous_range = get_page_range(previous_page)
+        next_range = get_page_range(next_page)
+
+        return {
+            "previous": None if previous_range == current_range else previous_range,
+            "current": current_range,
+            "next": None if next_range == current_range else next_range
+        }
+        
+
+    
+        
+
+    def set_page(self, page):
+        page_select = page
+
+        if page_select == 0 and self.current_page > 1: #previous
+            self.current_page -= 1
+            self.clear_layout()
+            self.search_results.load_page(0)
+
+        elif page_select == 1 and self.current_page < self.page_count: #next
+            self.current_page += 1
+
+            self.clear_layout()
+            self.search_results.load_page(2)
+
+        elif page_select == 2:
+            self.current_page = 1 #beginning
+
+        elif page_select == 3:
+            self.current_page = self.page_count #last page
+
+        self.set_page_count(self.page_count_label)
+       
+    def skip_to_last(self):
+            pass
+
+    def skip_to_previous(self):
+        pass
+
+    def set_page_count(self, page_count):
+        self.page_count_label = page_count 
+      
+        self.page_count_label.setText(f"Page {self.current_page} of {self.page_count}, {self.total_items} items")
+
     def copy_media(self):
 
         if len(self.selected_file_paths) != 0:
@@ -294,107 +460,81 @@ class MediaManager(QWidget):
                 except Exception as e:
                     print(f"Error: {e}")
 
+
             else:
                 print("Copy error")
 
-    def next_page(self):
-     
-        if self.starting_count + self.amount_on_current_page < self.entity_count:
-            self.starting_count = self.amount_on_current_page + self.starting_count
-            self.refresh_image_area(self.media_layout)
-         
-    def previous_page(self):
-        self.starting_count -= self.total_on_screen
-        if self.starting_count < 0:
-            self.starting_count = 0 
-              
-        self.refresh_image_area(self.media_layout)
+            print(f"copied {len(file_urls)} files")
 
-    def skip_to_last(self):
-        self.starting_count = (self.page_count - 1) * self.total_on_screen
-        self.refresh_image_area(self.media_layout)
 
-    def skip_to_previous(self):
-        self.starting_count = 0
-        self.refresh_image_area(self.media_layout)
 
     
-class ThumbnailClick(QLabel):
-    leftClicked = pyqtSignal()
-    rightClicked = pyqtSignal()
-
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.leftClicked.emit()
-        elif event.button() == Qt.RightButton:
-            self.rightClicked.emit()
-        super().mousePressEvent(event)
-
-class DragSelectionBox(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.start_point = None
-        self.end_point = None
-        self.setMouseTracking(True)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-  
-    def get_rect(self):
-        if self.start_point and self.end_point:
-            return QRect(self.start_point, self.end_point).normalized()
-        return QRect()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        if self.start_point and self.end_point:
-
-            pen = QPen(QColor("white"), 1, Qt.SolidLine)
-            brush = QColor(255, 255, 255, 80)  
-            painter.setPen(pen)
-            painter.setBrush(brush)
-            painter.drawRect(self.get_rect())
 
 
 class ThumbnailIcon(QLabel):
 
     clicked = pyqtSignal(str)
 
-    def __init__(self, path, thumbnail_path, length, media_type, parent=None):
+    def __init__(self, path, pixmap, length, media_type, size, left_click, file_paths, on_hover, pre_loaded_thumbs, preview, media_manager, parent=None):
+
         super().__init__(parent)
+
+        self._highlight = False
+
+        self.media_manager = media_manager
+
+        self.original_pixmap = pixmap
+
         self.path = path
         self.type = media_type
         self.length = length
+        self.left_click = left_click
 
-        self.pixmap = QPixmap(thumbnail_path)
+        self.file_paths = file_paths
 
-        # Scale so that height is at most 256, width adjusts proportionally
-        scaled_pixmap = self.pixmap.scaledToHeight(256, Qt.SmoothTransformation)
+        self.on_hover = on_hover
 
-        self.setPixmap(scaled_pixmap)
-        self.setFixedSize(scaled_pixmap.size())
+        self.thumbnail_list = pre_loaded_thumbs
+
+        self.set_preview = preview
+
+
+        self.img_size = size
+
+       
+
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet("border: none;")
 
-    def change_size(self):
-        scaled_pixmap = self.pixmap.scaledToHeight(128, Qt.SmoothTransformation)
+        self.change_size(size)
 
-        self.setPixmap(scaled_pixmap)
-        print('working?')
+    def change_size(self, size):
+        self.img_size = size
 
+        scaled = self.original_pixmap.scaledToHeight(size, Qt.SmoothTransformation)
+
+        self.setPixmap(scaled)
+        self.setFixedSize(scaled.size())
+
+  
     def paintEvent(self, event):
         super().paintEvent(event)
+        
 
         if self.type == "video":
-            painter = QPainter(self)
             
-            # Draw blue border
-            pen = QPen(QColor("blue"), 6)
+            painter = QPainter(self)
+
+            if self._highlight is False:
+                pen = QPen(QColor("blue"), 6)
+            else:
+                pen = QPen(QColor("cyan"), 6)
+                
             painter.setPen(pen)
             painter.drawRect(self.rect().adjusted(0, 0, 0, 0))
 
             if self.length:
-                # Inset from the edges (to not overlap border)
+             
                 margin = 6
                 rect_width = 60
                 rect_height = 25
@@ -405,12 +545,10 @@ class ThumbnailIcon(QLabel):
                     rect_height
                 )
 
-                # Draw translucent black background
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(0, 0, 0, 180))
                 painter.drawRect(bg_rect)
-
-                # Draw white duration text
+              
                 painter.setPen(QColor("white"))
                 painter.drawText(
                     bg_rect,
@@ -418,18 +556,72 @@ class ThumbnailIcon(QLabel):
                     self.length
                 )
 
+        if self._highlight is True:
+            if self.type != "video":
+                painter = QPainter(self)
+                pen = QPen(Qt.cyan, 6)  
+                painter.setPen(pen)
+                rect = self.rect().adjusted(1, 1, -1, -1)  
+                painter.drawRect(rect)
+
+    def selected(self):
+        if not self._highlight:
+            self._highlight = True
+            self.file_paths.append(self.path)
+          
+            self.update()
+
+    def unselect(self):
+        if self._highlight:
+            self._highlight = False
+            if self.path in self.file_paths:
+                self.file_paths.remove(self.path)
+             
+            self.update()
 
 
-    def mousePressEvent(self, event):
-        self.clicked.emit(self.path)
-        super().mousePressEvent(event)
+    def enterEvent(self, a0):
+        self.on_hover(1)
+        
 
+        return super().enterEvent(a0)
+    
+    def leaveEvent(self, a0):
+        self.on_hover(0)
+        return super().leaveEvent(a0)
+    
+    
+    def mousePressEvent(self, ev):
+
+        self.set_preview(self.original_pixmap, self.path)
+
+        if self.media_manager.crtl is True and self._highlight is False:
+            
+            self.selected()
+           
+
+        elif self.media_manager.crtl is True and self._highlight is True:
+            self.unselect()
+          
+
+        return super().mousePressEvent(ev)
+        
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+
+            if self.media_manager.crtl is False:
+            
+                self.left_click(self.path)
+
+
+        event.ignore()
 
 class FlowLayout(QLayout):
-    def __init__(self, parent=None, margin=0, spacing=25):
+    def __init__(self, parent=None, margin=0, spacing=25, justify_rows=False):
         super().__init__(parent)
         self.setSpacing(spacing)
         self.item_list = []
+        self.justify_rows = justify_rows 
 
     def addItem(self, item):
         self.item_list.append(item)
@@ -443,7 +635,7 @@ class FlowLayout(QLayout):
         return None
 
     def takeAt(self, index):
-        if index >= 0 and index < len(self.item_list):
+        if 0 <= index < len(self.item_list):
             return self.item_list.pop(index)
         return None
 
@@ -474,25 +666,31 @@ class FlowLayout(QLayout):
         y = rect.y()
         lineHeight = 0
         row_items = []
-        row_width = 0
         min_spacing = self.spacing()
 
         for item in self.item_list:
             item_width = item.sizeHint().width()
             if x + item_width > rect.right() and row_items:
-                # Distribute leftover space as extra spacing between items in row
-                leftover = rect.right() - x + min_spacing
-                extra_spacing = leftover // max(len(row_items) - 1, 1)
+               
+                x_row = rect.x()
+                if self.justify_rows and len(row_items) > 1:
+                    total_width = sum(i.sizeHint().width() for i in row_items)
+                    leftover = rect.width() - total_width - min_spacing * (len(row_items) - 1)
+                    leftover = max(0, leftover)  
+                    extra_spacing = leftover // (len(row_items) - 1)
+                else:
+                    extra_spacing = 0
 
-                # Reset x to start of row
-                x = rect.x()
                 for i, row_item in enumerate(row_items):
                     if not testOnly:
-                        row_item.setGeometry(QRect(QPoint(x, y), row_item.sizeHint()))
-                    x += row_item.sizeHint().width() + min_spacing + extra_spacing
+                        row_item.setGeometry(QRect(QPoint(x_row, y), row_item.sizeHint()))
+                    x_row += row_item.sizeHint().width()
+                    if i < len(row_items) - 1:
+                        x_row += min_spacing + extra_spacing
+
                 y += lineHeight + min_spacing
 
-                # Start new row
+               
                 row_items = []
                 lineHeight = 0
                 x = rect.x()
@@ -501,20 +699,15 @@ class FlowLayout(QLayout):
             x += item_width + min_spacing
             lineHeight = max(lineHeight, item.sizeHint().height())
 
-        # Layout last row with no extra spacing
-        x = rect.x()
-        for row_item in row_items:
+        x_row = rect.x()
+        for i, row_item in enumerate(row_items):
             if not testOnly:
-                row_item.setGeometry(QRect(QPoint(x, y), row_item.sizeHint()))
-            x += row_item.sizeHint().width() + min_spacing
+                row_item.setGeometry(QRect(QPoint(x_row, y), row_item.sizeHint()))
+            x_row += row_item.sizeHint().width()
+            if i < len(row_items) - 1:
+                x_row += min_spacing
 
         return y + lineHeight - rect.y()
-
-
-
-
-
-    
 
 
 

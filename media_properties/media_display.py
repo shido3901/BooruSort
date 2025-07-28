@@ -1,5 +1,5 @@
-from PyQt5.QtWidgets import QLabel, QHBoxLayout, QWidget, QDesktopWidget, QApplication, QSizePolicy, QPushButton, QVBoxLayout, QTextEdit
-from PyQt5.QtGui import QPixmap, QFontMetrics, QFont
+from PyQt5.QtWidgets import QLabel, QHBoxLayout, QWidget, QDesktopWidget, QApplication, QSizePolicy, QPushButton, QVBoxLayout, QTextEdit, QListWidget, QListWidgetItem
+from PyQt5.QtGui import QPixmap, QFontMetrics, QFont, QColor
 from PyQt5.QtCore import Qt, QEvent, pyqtSignal, QTimer
 from PIL import Image, ImageOps
 import os, cv2
@@ -15,9 +15,10 @@ class MediaDisplayWindow(QWidget):
     def __init__(self, file_path, tag_name, booru_db):
         super().__init__()
 
+       
         self.file_path = file_path
 
-        print(f"TRYING TO DISPLAY {self.file_path}")
+    
 
         self.booru_db = booru_db
         self.font = QFont('Roboto')
@@ -106,20 +107,30 @@ class MediaDisplayWindow(QWidget):
         result = self.booru_db.get_item_info(file_path)
         #remember to attatch profile id under here ======vvvvvvvv====
         
+
+        
         
         if result:
             print("File exists:", result)
         else:
             print("No file found with that path.")
 
-        file_tags = self.booru_db.get_file_tag_info(file_path)
+        tag_info = self.booru_db.files.get_file_tag_info(file_path)
 
-        color = "#FFFFFF"
-        if file_tags:
+        
+        for category_name, tags in tag_info.items():
+            category_name_label = QLabel(f"{category_name}")
+            category_name_label.setMinimumWidth(80)
+            category_name_label.setMinimumHeight(40)
+            category_name_label.setStyleSheet("font-size:30px; color: white;")
+            category = CategoryList(category_name, tags)
+            self.tag_list_layout.insertWidget(0, category)
+            self.tag_list_layout.insertWidget(0, category_name_label)
+        print(tag_info)
 
-            print(f"file tags are: {file_tags}")
-            for tag_id, name, count in file_tags:
-                self.create_new_tag_buttons(name, color, count)
+
+
+            
 
         self.entity_options = QWidget()
         self.entity_options.setMinimumHeight(45)
@@ -271,64 +282,79 @@ class MediaDisplayWindow(QWidget):
                     print(f"Error terminating MPV: {e}")
             event.accept()
 
-    def create_new_tag_buttons(self, tag_name, color, count):
-                
-        self.tag_name = tag_name
-       
-        tag_button_widget = QWidget()
-        tag_button_widget.setFixedHeight(38)
-        tag_button_widget.setStyleSheet(
-                                        "background-color: #112233")
+
+class CategoryList(QListWidget):
+    def __init__(self, category_name, tags):
+        super().__init__()
+
+        self.category = category_name
+        self.tags = tags
+
+
+        self.setSelectionMode(QListWidget.SingleSelection)
+        self.setStyleSheet("""
+            QListWidget {
+                border: none;
+                background: transparent;
+            }
+            QListWidget::item {
+                padding: 2px;
+                margin: 0px;
+                border: none;
+            }
+            QListWidget::item:selected {
+                background-color: rgba(30, 144, 255, 80);  /* Semi-transparent blue */
+                border: none;
+            }
+        """)
+
+        for tag_name, font_color, count in self.tags:
+            item_widget = QWidget()
+            layout = QHBoxLayout()
+            layout.setContentsMargins(5, 2, 5, 2)  # control spacing
+            layout.setSpacing(10)
+
+            label_name = QLabel(tag_name.strip())
+            label_name.setStyleSheet(f"color: {font_color};")
+            label_name.setStyleSheet(f"color: {font_color}; font-size: 20px;")
+
+            if count >= 1000:
+                    count = f"{count / 1000:.1f}k"
+
+            label_count = QLabel(str(count))
+            label_count.setAlignment(Qt.AlignRight)
+            label_count.setStyleSheet(f"color: {font_color};")
+            label_count.setStyleSheet(f"color: {font_color}; font-size: 20px;")
+
+            layout.addWidget(label_name)
+            layout.addStretch()  # pushes the count to the right
+            layout.addWidget(label_count)
+
+            item_widget.setLayout(layout)
+
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(item_widget.sizeHint())
+            self.addItem(list_item)
+            self.setItemWidget(list_item, item_widget)
+
+        item_height = self.sizeHintForRow(0)
+        total_height = item_height * self.count() + 2 * self.frameWidth()
+        self.setFixedHeight(total_height)
+
         
-        tag_button_layout = QHBoxLayout()
-        tag_button_layout.setContentsMargins(0,0,0,5)
-        tag_button_widget.setLayout(tag_button_layout)
-
-        tag_button = QPushButton(self.tag_name)
-        tag_button.setCursor(Qt.PointingHandCursor)
-        tag_button.setFont(self.font)
-        tag_button.setFixedHeight(34)
-        tag_button.setMinimumWidth(150)
-        tag_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        tag_button_layout.addWidget(tag_button, alignment=Qt.AlignLeft)
-
-        self.tag_list_layout.insertWidget(0, tag_button_widget)
-
-        metrics = QFontMetrics(tag_button.font())
-        elided_text = metrics.elidedText(tag_name, Qt.ElideRight, tag_button.width() - 50)
-        tag_button.setText(elided_text)
-        tag_button.setStyleSheet(f"""
-                            QPushButton {{
-                                color: {color};
-                                background-color: #112233;
-                                border: none;
-                                max-width: 100px;
-                                text-align: left;
-                                font-size: 25px;
-                            }}
-                            QPushButton:hover {{
-                                color: #00FFFF;
-                            }}
-                        """)
-
-        tag_button_layout.addWidget(tag_button, alignment=Qt.AlignLeft)
-        tag_button_layout.addStretch()
-                
-        #tag_button.clicked.connect(lambda checked=False, t=tag_name: self.add_to_recent(t))
-        tag_button.clicked.connect(lambda: self.load_images.emit(tag_name))
-        #tag_button.rightClicked.connect(lambda t=tag_name: self.delete_tag(t, entity_count))
-
-        if count >= 1000:
-                entity_display = f"{count / 1000:.1f}k"
-        else: 
-            entity_display = count
-
-        tag_entity_count = QLabel(str(entity_display))
-        tag_entity_count.setFont(self.font)
-        tag_entity_count.setMinimumWidth(15)
-        tag_entity_count.setFixedHeight(40)
-        tag_entity_count.setStyleSheet("color: #B0B0B0; background-color: #112233; border: none; font-size: 23px; }")
-        tag_button_layout.addWidget(tag_entity_count, alignment=Qt.AlignRight)
 
 
- 
+
+
+    def update_list(self):
+        pass
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            item = self.itemAt(event.pos())
+            if item:
+                name = item.text()
+                color = item.foreground().color().name()
+               # self.tag_box.set_category(name, color)
+
+        super().mousePressEvent(event)

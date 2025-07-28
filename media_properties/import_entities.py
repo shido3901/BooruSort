@@ -12,10 +12,12 @@ from datetime import datetime
 from config.ui_config import ErrorDialog
 
 class ImportEntities(QWidget):
-    def __init__(self, tag_manager):
+    def __init__(self, tm, tt):
         super().__init__()
    
-        self.tag_manager = tag_manager
+        self.tag_manager = tm
+        self.tag_tab = tt
+        
         self.new_tag_list = self.tag_manager.new_tag_list
         self.initUI()
 
@@ -62,7 +64,7 @@ class ImportEntities(QWidget):
         self.import_widget.dragEnterEvent = self.dragEnterEvent
         self.import_widget.dropEvent = self.dropEvent
 
-        self.tag_manager.tag_page_layout.addWidget(self.import_widget, stretch=13)
+        self.tag_tab.tag_page_layout.addWidget(self.import_widget, stretch=13)
 
     def dragEnterEvent(self, event: QDragEnterEvent):
         if event.mimeData().hasUrls():
@@ -98,7 +100,7 @@ class ImportEntities(QWidget):
             
             self.import_queue.extend(new_files)
         
-            self.tag_manager.update_import_stats()
+            #self.tag_manager.update_import_stats()
         
         else:
             event.ignore()
@@ -183,7 +185,7 @@ class ThumbnailCreation(QThread):
         except FileExistsError:
             print('Directory already exists')
 
-        self.conn = sqlite3.connect("booru.db")
+        self.conn = sqlite3.connect("db/booru.db")
         self.cursor = self.conn.cursor()
 
         self.cursor.execute("SELECT id FROM profiles WHERE profile_name = ?", (self.current_user,))
@@ -219,7 +221,7 @@ class ThumbnailCreation(QThread):
         date_str = now.strftime("%Y-%m-%d")
 
         invalid_files = 0
-        MAX_SIZE = (256,256)
+        MAX_SIZE = (512,512)
 
         for url in self.entity_list:
 

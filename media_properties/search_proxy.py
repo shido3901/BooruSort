@@ -99,8 +99,13 @@ class ItemDelegate(QStyledItemDelegate):
 
         rect = option.rect
         name = item["name"]
-        count = str(item["count"])
+        count = int(item["count"])
         color = QColor(item["color"])
+
+        if count >= 1000:
+            count_text = f"{count / 1000:.1f}k"
+        else:
+            count_text = str(count)
 
         font = option.font
         font.setPointSize(10)
@@ -138,7 +143,7 @@ class ItemDelegate(QStyledItemDelegate):
         x += metrics.horizontalAdvance(name) + padding
 
         painter.setPen(Qt.gray)
-        painter.drawText(rect.right() - metrics.horizontalAdvance(count) - padding, center_y, count)
+        painter.drawText(rect.right() - metrics.horizontalAdvance(count_text) - padding, center_y, count_text)
 
         painter.restore()
        
