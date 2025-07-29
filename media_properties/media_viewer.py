@@ -1,54 +1,36 @@
-from PyQt5.QtWidgets import QLabel, QSizePolicy, QWidget, QGridLayout, QApplication, QApplication, QVBoxLayout, QLayout, QScrollArea, QHBoxLayout
-from PyQt5.QtCore import Qt, QEvent, pyqtSignal, QPoint, QRect, QUrl, QMimeData, QSize, QThread, QObject, QTimer, QThreadPool, QRunnable
-from PyQt5.QtGui import QPixmap, QCursor, QPainter, QColor, QPen, QImageReader, QImage
+from PyQt5.QtWidgets import QLabel, QSizePolicy, QWidget, QApplication, QApplication, QVBoxLayout, QLayout, QScrollArea, QHBoxLayout
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QRect, QUrl, QMimeData, QSize, QObject, QThreadPool, QRunnable, QEvent
+from PyQt5.QtGui import QPixmap, QPainter, QColor, QPen, QImage, QDrag, QCursor, QDragEnterEvent, QDropEvent
 
 from media_properties.media_display import MediaDisplayWindow
-import time
 
-
-
-
-import os, json, sqlite3
+import os, time
 
 class MediaManager(QWidget):
     changeSize = pyqtSignal()
     def __init__(self, booru_db, main_area, main_area_layout):
         super().__init__()
 
-        self.current_page = 1
-        self.total = 0
-        self.total_pages = 0
-        self.total_items = 0
-        self.current_layout = 1
-
-
         self.booru_db = booru_db
 
         self.main_area = main_area
         self.main_area_layout = main_area_layout
-        
+        self.main_area.setMouseTracking(True)
+        self.main_area.setAcceptDrops(True)
 
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
+        self.installEventFilter(self)
+        self.main_area.installEventFilter(self)
 
-        container = QWidget()
-        container.setMinimumSize(10,10)
-        self.media_layout = FlowLayout(container, spacing=20, justify_rows=True)
-        container.setLayout(self.media_layout)
-      
-        self.scroll_area.setWidget(container)
+        self.drag_box = DragSelectionBox(self.main_area)
+        self.start_point = None
+        self.drag_box.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.drag_box.hide()
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.scroll_area)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self.setLayout(layout)
-        
-        self.setMinimumWidth(10)
-        self.setStyleSheet("color: transparent; border-color: none;")
-     
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
-       
-    
+        self.page_count = 0
+        self.current_page = 1
+        self.total_pages = 0
+        self.total_items = 0
+
         self.thumbnail_sizes = [128, 256, 384, 512]  
         self.current_size_index = 1
         self.img_size = 256
@@ -57,183 +39,58 @@ class MediaManager(QWidget):
         self.amount_per_page = [25, 50, 75, 100]  
         self.current_amount_index = 4
 
+        self.selected_thumbnails = set()
         self.selected_file_paths = []
-        self.selected_entities = []
-
-        self.thumbnail_list = []
-
-        self.search_queue = []
-
         self.windows = []
 
-
-        
-
-        self.crtl_a = False
-        self.enter = False
-        self.click = None
-
-        
-
-        self.timer_start = None
-        self.timer_end = None
-
-
-        self.previous_name = None
         self.search_results = None
-
-        self.mouse_clicked = False
         self.hover = False
+        self.ctrl = False
 
-        self.crtl = False
-
-        self.page_count = 0
-      
         self.threadpool = QThreadPool()
 
+        self.initUI()  
 
-    def on_hover(self, type):
+    def initUI(self):
 
-        if type == 1:
-            self.hover = True
-           
-        else:
-            self.hover = False
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
 
-
-    def set_preview(self, preview_img, file_path):
-
-        preview_img = preview_img.scaledToHeight(self.img_size, Qt.SmoothTransformation)
-
-        widget = QWidget()
-        layout = QHBoxLayout()
-        layout.setContentsMargins(6,6,6,6)
-        layout.setSpacing(12)
-
-        img_label = QLabel()
-        img_label.setPixmap(preview_img)
-        img_label.setFixedSize(preview_img.size())
-        layout.addWidget(img_label)
-
-        if file_path not in self.selected_file_paths or len(self.selected_file_paths) <= 1:
-            file_urls = [QUrl.fromLocalFile(file_path)]
-
-            if self.crtl is False:
-
-                self.unselect_all()
-            
-        else:
-
-            file_urls = [QUrl.fromLocalFile(path) for path in self.selected_file_paths if os.path.exists(path)]
-
-            
-
-            # Text label
-            text_label = QLabel(f"+{len(self.selected_file_paths) - 1}")
-            layout.addWidget(text_label)
-
-            
-            # Render widget to pixmap
-            
-            
-
-        widget.setLayout(layout)
-        widget.adjustSize()
-
-        self.preview_image = widget.grab()
-
-
-        if file_urls:
-
-            self.mime_data = QMimeData()
-            self.mime_data.setUrls(file_urls)
-
-    
+        container = QWidget()
+        container.setMinimumSize(10,10)
+        self.media_layout = FlowLayout(container, spacing=20, justify_rows=True)
        
+        container.setLayout(self.media_layout)
+        self.scroll_area.setWidget(container)
+       
+        layout = QVBoxLayout()
+        layout.addWidget(self.scroll_area)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+        self.setAcceptDrops(True)
+        
+        self.setMinimumWidth(10)
+        self.setStyleSheet("color: transparent; border-color: none;")
+     
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
 
     def search(self, list):
         self.load_tag_name(list) 
-
-    def set_amount(self):
-
-        self.current_amount_index = (self.current_amount_index + 1) % len(self.thumbnail_sizes)
-        self.items_per_page = self.amount_per_page[self.current_amount_index]
-
-        self.search_results.thumbnails.clear()
-
-
-        self.load_thumbnails(self.file_info)
-
-        
-
-        #print(self.amount)
-
-    def set_image_size(self):
-        
-        self.current_size_index = (self.current_size_index + 1) % len(self.thumbnail_sizes)
-        self.img_size = self.thumbnail_sizes[self.current_size_index]
-    
-        for page_key in ("current", "next", "previous"):
-            for thumbnail in self.search_results.thumbnails[page_key]:
-                thumbnail.change_size(self.img_size)
-
 
     def load_tag_name(self, tag_names):
 
         file_list = self.booru_db.files.load_file_info(tag_names)
 
-        self.batch_size = 25
         self.current_batch_index = 0     
 
         if file_list:
-
             self.load_thumbnails(file_list)
 
         else:
-            self.previous_name = None
             self.clear_layout()
-            print('implement empty box message')
+            print('implement empty box message')      
 
-    def set_ctrl(self, type):
-        self.crtl = type
-
-        print(self.crtl)
-
-
-    def left_click(self, file_paths):
-            
-        tag_name = None
-
-        self.viewer = MediaDisplayWindow(file_paths, tag_name, self.booru_db)
-        
-        self.windows.append(self.viewer)
-        self.viewer.show()
-
-        self.selected_file_paths.clear()
-
-        self.unselect_all()
-
-        #self.refresh_image_area(self.media_layout)
-    
-    def refresh_layout(self):
-
-        self.clear_layout()
-        self.loaded = True
-        self.display_thumbnails()
-
-    def clear_layout(self):
-
-        while self.media_layout.count():
-                item = self.media_layout.takeAt(0)
-                if item.widget():
-                    item.widget().setParent(None)
-
-    def unselect_all(self):
-        for page_key in ("current", "next", "previous"):
-            for thumbnail in self.search_results.thumbnails[page_key]:
-                thumbnail.unselect()
-
-   
     def load_thumbnails(self, file_list):
 
         if self.search_results is not None:
@@ -285,7 +142,7 @@ class MediaManager(QWidget):
                         self.batch.append((path, thumbnail_path, length, media_type))
 
                     worker = ImageWorker(self.batch, self.page_key, parent=self)
-                    worker.signals.images_ready.connect(self.display_thumbnails)
+                    worker.signals.processed.connect(self.display_thumbnails)
                     self.timer_start = time.perf_counter()
                 
                     self.media_manager.threadpool.start(worker)
@@ -296,16 +153,12 @@ class MediaManager(QWidget):
 
                     pixmap = QPixmap.fromImage(thumbnail_img)
 
-                    # this is a crime
-                    thumbnail_icon = ThumbnailIcon(path, pixmap, length, media_type, size=self.media_manager.img_size, 
-                                                   left_click=self.media_manager.left_click, file_paths=self.media_manager.selected_file_paths, 
-                                                   on_hover=self.media_manager.on_hover, pre_loaded_thumbs=self.thumbnails, preview=self.media_manager.set_preview,
-                                                   media_manager=self.media_manager)
+                    thumbnail_icon = ThumbnailIcon(path, pixmap, length, media_type, media_manager=self.media_manager)
                     
-
                     self.thumbnails[key].append(thumbnail_icon)
 
                 if key == "current":
+
                     self.media_manager.clear_layout()
 
                     for thumbnails in self.thumbnails["current"]:
@@ -317,19 +170,14 @@ class MediaManager(QWidget):
 
                 else:
                     self.loaded = True
-
                         
-
                 #print(f" LENGTH OF PREVIOUS: {len(self.thumbnails["previous"])}")
                 #print(f" LENGTH OF CURRENT: {len(self.thumbnails["current"])}")
                 #print(f" LENGTH OF NEXT: {len(self.thumbnails["next"])}")
 
             def load_page(self, page):
-                printed = 0   
-
-
-                #0 = load previous, else load next page
-
+                printed = 0   #0 = load previous, else load next page
+                
                 if self.loaded is True:
                     print('locked')
                     self.loaded = False
@@ -337,11 +185,12 @@ class MediaManager(QWidget):
                     load_page = "previous" if page==0 else "next"
                     shift_page = "next" if page==0 else "previous"
 
+                    self.media_manager.clear_layout()
+
                     for thumbnails in self.thumbnails[load_page]:
                         self.media_manager.media_layout.addWidget(thumbnails)
                         printed += 1
                         
-
                     self.thumbnails[shift_page] = self.thumbnails["current"].copy()
                     self.thumbnails["current"].clear()
 
@@ -353,9 +202,8 @@ class MediaManager(QWidget):
                     self.media_manager.set_page_count(self.media_manager.page_count_label)
                     print(f"loaded {printed} imgs")
 
-                        
         class ImageWorkerSignals(QObject):
-            images_ready = pyqtSignal(object, str)
+            processed = pyqtSignal(object, str)
 
         class ImageWorker(QRunnable):
             def __init__(self, batch_info, page_key, parent=None):
@@ -373,16 +221,33 @@ class MediaManager(QWidget):
                     thumbnail_img = QImage(thumbnail_path)
                     self.thumbnail_info.append((path, thumbnail_img, length, media_type))
 
-                self.signals.images_ready.emit(self.thumbnail_info, self.key)
+                self.signals.processed.emit(self.thumbnail_info, self.key)
         
         self.search_results = SearchResults(file_list, media_manager=self)
+
+    def clear_layout(self):
+
+        while self.media_layout.count():
+                item = self.media_layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
+
+    def display_media(self, file_paths):
+            
+        self.viewer = MediaDisplayWindow(file_paths, self.booru_db)
         
+        self.windows.append(self.viewer)
+        self.viewer.show()
+
+        self.selected_file_paths.clear()
+
+        self.unselect_all()
+
     def get_pagination_ranges(self, total, items_per_page, current_page):
         self.page_count = (total + items_per_page - 1) // items_per_page
         self.total_items = total
 
         self.set_page_count(self.page_count_label)
-
 
         def get_page_range(page):
             
@@ -403,23 +268,16 @@ class MediaManager(QWidget):
             "current": current_range,
             "next": None if next_range == current_range else next_range
         }
-        
-
-    
-        
 
     def set_page(self, page):
         page_select = page
 
         if page_select == 0 and self.current_page > 1: #previous
             self.current_page -= 1
-            self.clear_layout()
             self.search_results.load_page(0)
 
         elif page_select == 1 and self.current_page < self.page_count: #next
             self.current_page += 1
-
-            self.clear_layout()
             self.search_results.load_page(2)
 
         elif page_select == 2:
@@ -431,7 +289,7 @@ class MediaManager(QWidget):
         self.set_page_count(self.page_count_label)
        
     def skip_to_last(self):
-            pass
+        pass
 
     def skip_to_previous(self):
         pass
@@ -440,6 +298,24 @@ class MediaManager(QWidget):
         self.page_count_label = page_count 
       
         self.page_count_label.setText(f"Page {self.current_page} of {self.page_count}, {self.total_items} items")
+
+    def set_amount(self):
+
+        self.current_amount_index = (self.current_amount_index + 1) % len(self.thumbnail_sizes)
+        self.items_per_page = self.amount_per_page[self.current_amount_index]
+
+        self.search_results.thumbnails.clear()
+
+        self.load_thumbnails(self.file_info)
+
+    def set_image_size(self):
+        
+        self.current_size_index = (self.current_size_index + 1) % len(self.thumbnail_sizes)
+        self.img_size = self.thumbnail_sizes[self.current_size_index]
+    
+        for page_key in ("current", "next", "previous"):
+            for thumbnail in self.search_results.thumbnails[page_key]:
+                thumbnail.change_size(self.img_size)
 
     def copy_media(self):
 
@@ -460,67 +336,211 @@ class MediaManager(QWidget):
                 except Exception as e:
                     print(f"Error: {e}")
 
-
             else:
                 print("Copy error")
 
             print(f"copied {len(file_urls)} files")
 
+    def unselect_all(self):
+        try:
+            for page_key in ("current", "next", "previous"):
+                for thumbnail in self.search_results.thumbnails[page_key]:
+                    thumbnail.update_highlight(highlight=False)
+        except:
+            pass
 
+    def on_hover(self, type):
 
+        if type == 1:
+            self.hover = True
+           
+        else:
+            self.hover = False
+
+    def set_preview(self, preview_img, file_path):
+
+        preview_img = preview_img.scaledToHeight(self.img_size, Qt.SmoothTransformation)
+
+        widget = QWidget()
+        layout = QHBoxLayout()
+        layout.setContentsMargins(6,6,6,6)
+        layout.setSpacing(12)
+
+        img_label = QLabel()
+        img_label.setPixmap(preview_img)
+        img_label.setFixedSize(preview_img.size())
+        layout.addWidget(img_label)
+
+        if file_path not in self.selected_file_paths or len(self.selected_file_paths) <= 1:
+            file_urls = [QUrl.fromLocalFile(file_path)]
+
+            if self.ctrl is False:
+                self.unselect_all()
+            
+        else:
+
+            file_urls = [QUrl.fromLocalFile(path) for path in self.selected_file_paths if os.path.exists(path)]
+
+            text_label = QLabel(f"+{len(self.selected_file_paths) - 1}")
+            layout.addWidget(text_label)
+
+        widget.setLayout(layout)
+        widget.adjustSize()
+
+        self.preview_image = widget.grab()
+
+        if file_urls:
+
+            self.mime_data = QMimeData()
+            self.mime_data.setUrls(file_urls)
+
+    def set_ctrl(self, type):
+        self.ctrl = type
+
+    def eventFilter(self, source, event):
+        if source == self:
+            if event.type() == QEvent.KeyPress:
+                if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_C:
+                    self.copy_media()
+
+                elif event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_A:
+                    try:
+                        for thumb in self.search_results.thumbnails["current"]:
+                                    thumb.update_highlight(highlight=True)
+                    except:
+                        pass
+
+                elif event.key() == Qt.Key_Control:
+                    self.set_ctrl(type=True)
+                return True
+
+            elif event.type() == QEvent.KeyRelease:
+                if event.key() == Qt.Key_Control:
+                    
+                    self.set_ctrl(type=False)
+                    print(len(self.selected_thumbnails))
+
+        elif source == self.main_area:
+            if event.type() == QEvent.MouseButtonPress:
+                if event.button() == Qt.LeftButton:
+                    self.start_pos = event.pos()
+
+                    if self.hover is False:
+                        
+                        pos_in_main = self.mapFrom(self, event.pos())
+                           
+                        self.drag_box.setGeometry(self.main_area.rect())
+                        self.drag_box.start_point = self.drag_box.mapFromParent(pos_in_main)
+                        self.drag_box.end_point = self.drag_box.start_point
+                       
+                        self.drag_box.show()
+                        self.drag_box.raise_()
+                        self.drag_box.update()
+
+                        if self.ctrl is False:
+                            self.selected_thumbnails.clear()
+                            
+                            self.unselect_all()
+
+                        try:         
+                            for thumb in self.search_results.thumbnails["current"]:
+                                    thumb.toggle_ctrl()
+                        except:
+                            pass
+                    
+                    return True
+
+            if event.type() == QEvent.MouseButtonRelease:
+                if event.button() == Qt.LeftButton:
+                    self.drag_box.hide()
+                    return True
+
+            if event.type() == QEvent.MouseMove:
+                if self.hover is False:
+                    if self.drag_box.isVisible():
+                        
+                        pos_in_main = self.mapFrom(self, event.pos())
+                        
+                        self.drag_box.end_point = self.drag_box.mapFromParent(pos_in_main)
+                        self.drag_box.update()
+                        
+                        rect = self.drag_box.get_rect()
+                        rect_in_main = QRect(self.drag_box.mapToParent(rect.topLeft()), rect.size())
+
+                        viewport = self.scroll_area.viewport()
+                        top_left_in_viewport = viewport.mapFrom(self.main_area, rect_in_main.topLeft())
+                        bottom_right_in_viewport = viewport.mapFrom(self.main_area, rect_in_main.bottomRight())
+                        
+                        h_scroll = self.scroll_area.horizontalScrollBar().value()
+                        v_scroll = self.scroll_area.verticalScrollBar().value()
+
+                        top_left_in_viewport += QPoint(h_scroll, v_scroll)
+                        bottom_right_in_viewport += QPoint(h_scroll, v_scroll)
+
+                        rect_in_viewport = QRect(top_left_in_viewport, bottom_right_in_viewport)
+
+                        try:
+                            for thumb in self.search_results.thumbnails["current"]:
+                                thumb_rect = thumb.geometry()
+
+                                if rect_in_viewport.intersects(thumb_rect):
+                                    thumb.intersect(intersect=True)
+                                else:
+                                    thumb.intersect(intersect=False)
+                        except:
+                            pass
+                
+                elif self.ctrl is False:
+                    if event.buttons() == Qt.LeftButton:
+                        if (event.pos() - self.start_pos).manhattanLength() < QApplication.startDragDistance():
+                            return False
+
+                        drag = QDrag(self)
+                        drag.setMimeData(self.mime_data)
+                        drag.setPixmap(self.preview_image)
+                        drag.setHotSpot(event.pos() - self.start_pos)
+                        drag.exec_(Qt.CopyAction | Qt.MoveAction)
+
+                        return True
+
+        return super().eventFilter(source, event)
     
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        event.acceptProposedAction()
 
+    def dropEvent(self, event: QDropEvent):
+        event.acceptProposedAction()
 
 class ThumbnailIcon(QLabel):
-
-    clicked = pyqtSignal(str)
-
-    def __init__(self, path, pixmap, length, media_type, size, left_click, file_paths, on_hover, pre_loaded_thumbs, preview, media_manager, parent=None):
-
+    def __init__(self, path, pixmap, length, media_type, media_manager, parent=None):
         super().__init__(parent)
 
-        self._highlight = False
+        self.path = path
+        self.original_pixmap = pixmap
+        self.length = length
+        self.type = media_type
 
         self.media_manager = media_manager
 
-        self.original_pixmap = pixmap
-
-        self.path = path
-        self.type = media_type
-        self.length = length
-        self.left_click = left_click
-
-        self.file_paths = file_paths
-
-        self.on_hover = on_hover
-
-        self.thumbnail_list = pre_loaded_thumbs
-
-        self.set_preview = preview
-
-
-        self.img_size = size
-
-       
+        self._highlight = False
+        self.toggle_state = False
 
         self.setCursor(Qt.PointingHandCursor)
         self.setStyleSheet("border: none;")
 
-        self.change_size(size)
+        self.change_size(self.media_manager.img_size)
 
     def change_size(self, size):
-        self.img_size = size
+        self.media_manager.img_size = size
 
         scaled = self.original_pixmap.scaledToHeight(size, Qt.SmoothTransformation)
 
         self.setPixmap(scaled)
         self.setFixedSize(scaled.size())
 
-  
     def paintEvent(self, event):
         super().paintEvent(event)
         
-
         if self.type == "video":
             
             painter = QPainter(self)
@@ -538,23 +558,14 @@ class ThumbnailIcon(QLabel):
                 margin = 6
                 rect_width = 60
                 rect_height = 25
-                bg_rect = QRect(
-                    self.width() - rect_width - margin,
-                    margin,
-                    rect_width,
-                    rect_height
-                )
+                bg_rect = QRect(self.width() - rect_width - margin, margin,rect_width, rect_height)
 
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(0, 0, 0, 180))
                 painter.drawRect(bg_rect)
               
                 painter.setPen(QColor("white"))
-                painter.drawText(
-                    bg_rect,
-                    Qt.AlignCenter,
-                    self.length
-                )
+                painter.drawText(bg_rect, Qt.AlignCenter, self.length)
 
         if self._highlight is True:
             if self.type != "video":
@@ -564,55 +575,74 @@ class ThumbnailIcon(QLabel):
                 rect = self.rect().adjusted(1, 1, -1, -1)  
                 painter.drawRect(rect)
 
-    def selected(self):
-        if not self._highlight:
-            self._highlight = True
-            self.file_paths.append(self.path)
+    def update_highlight(self, highlight=True):
+       
+        if highlight:
+            if not self._highlight:
+                self._highlight = True
+                if self.path not in self.media_manager.selected_file_paths:
+                    self.media_manager.selected_file_paths.append(self.path)
+                self.update()
+
           
-            self.update()
+            if self not in self.media_manager.selected_thumbnails:
+                self.media_manager.selected_thumbnails.add(self)
+                print(len(self.media_manager.selected_thumbnails))
 
-    def unselect(self):
-        if self._highlight:
-            self._highlight = False
-            if self.path in self.file_paths:
-                self.file_paths.remove(self.path)
-             
-            self.update()
+        else:
+            if self._highlight:
+                self._highlight = False
+                if self.path in self.media_manager.selected_file_paths:
+                    self.media_manager.selected_file_paths.remove(self.path)
+                self.update()
 
+            if self in self.media_manager.selected_thumbnails:
+                self.media_manager.selected_thumbnails.remove(self)
+                print(len(self.media_manager.selected_thumbnails))
+
+
+    def intersect(self, intersect):
+
+        highlight = (self.toggle_state is False) if intersect else (self.toggle_state is True)
+
+        self.update_highlight(highlight=highlight)
+
+    def toggle_ctrl(self):
+
+        if self in self.media_manager.selected_thumbnails:
+
+            self.toggle_state = True
+        else:
+            self.toggle_state = False
 
     def enterEvent(self, a0):
-        self.on_hover(1)
-        
-
+        self.media_manager.on_hover(1)
         return super().enterEvent(a0)
     
     def leaveEvent(self, a0):
-        self.on_hover(0)
+        self.media_manager.on_hover(0)
         return super().leaveEvent(a0)
-    
     
     def mousePressEvent(self, ev):
 
-        self.set_preview(self.original_pixmap, self.path)
+        self.media_manager.set_preview(self.original_pixmap, self.path)
 
-        if self.media_manager.crtl is True and self._highlight is False:
-            
-            self.selected()
-           
+        if self.media_manager.ctrl:
 
-        elif self.media_manager.crtl is True and self._highlight is True:
-            self.unselect()
-          
+            if self._highlight:
 
+                self.update_highlight(highlight=False)
+            else:
+                self.update_highlight(highlight=True)
+                    
         return super().mousePressEvent(ev)
         
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
 
-            if self.media_manager.crtl is False:
+            if self.media_manager.ctrl is False:
             
-                self.left_click(self.path)
-
+                self.media_manager.display_media(self.path)
 
         event.ignore()
 
@@ -708,6 +738,27 @@ class FlowLayout(QLayout):
                 x_row += min_spacing
 
         return y + lineHeight - rect.y()
+    
+class DragSelectionBox(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.start_point = None
+        self.end_point = None
+        self.setMouseTracking(True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+  
+    def get_rect(self):
+        if self.start_point and self.end_point:
+            return QRect(self.start_point, self.end_point).normalized()
+        return QRect()
 
-
-
+    def paintEvent(self, event):
+        if self.start_point and self.end_point:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            rect = QRect(self.start_point, self.end_point).normalized()
+            pen = QPen(QColor("white"), 1)
+            brush = QColor(255, 255, 255, 80)
+            painter.setPen(pen)
+            painter.setBrush(brush)
+            painter.drawRect(rect)
