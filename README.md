@@ -33,7 +33,7 @@ The executables are bundled with BooruSort but are **unmodified**. Please refer 
 
 ## Notice
 
-⚠️ **Many features are still in progress, and the program may not run at all or be unstable.**
+**Many features are still in progress, and the program may not run at all or be unstable.**
 
 ## License
 
