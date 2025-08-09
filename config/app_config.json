@@ -1,0 +1,20 @@
+{
+    "theme": {
+        "mode": "booru"
+    },
+    "main_window": {
+        "amount_per_page": 25,
+        "size": 256,
+        "layout": "fit"
+    },
+    "window": {
+        "fullscreen": false
+    },
+    "first_open": {
+        "show_tips": true
+    },
+    "version": {
+        "current_version": "1.0.0",
+        "last_updated": "2025-08-07"
+    }
+}
