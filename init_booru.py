@@ -1,114 +1,111 @@
 
 
 
-from PyQt5.QtWidgets import (QMainWindow, QApplication, QLineEdit, QLabel, QWidget, QSizePolicy, QScrollArea, QMenu, QAction,
-                             QVBoxLayout, QHBoxLayout, QGridLayout, QPushButton, QToolButton)
-from PyQt5.QtCore import Qt, QEvent, QPoint, QTimer
+from PyQt5.QtWidgets import (QMainWindow, QApplication, QWidget, QSizePolicy,
+                             QVBoxLayout, QHBoxLayout)
+from PyQt5.QtCore import Qt
 
-from config.app_config import ApplicationConfig
+from config.app_configuration import ApplicationConfiguration as Config
 from config.booru_ui import LightWidget, DarkWidget
 
-"""from db.booru_db import BooruDb
-from config.ui_config import UiInfo, ProgressBar
-
-from config.profile_config import ProfileConfig
-from config.theme import Theme
-
-from media_properties.media_viewer import MediaManager
-from media_properties.search_bar import SearchBar
-
-from tag_properties.taglist import TagList
-from tag_properties.tag_manager import TagManager
-from media_properties.import_entities import ImportEntities"""
-
 from media_properties.media_bar import MediaBar
+from media_properties.media_viewer import MediaViewer
+from media_properties.tab_bar import TabBar
 
 import sys
 
+DEBUG_MODE = 0
+
 QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
 QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
       
-        app_config = ApplicationConfig(main_window=self)
-        app_config.init_config()
+        app_config = Config(main_window=self)
+        app_config.init_config(DEBUG_MODE)
+        self.init_ui()
+
+    def resizeEvent(self, a0):
+        return super().resizeEvent(a0)
         
     def init_ui(self):
        
-        main_window     = DarkWidget ()
-        top_left_panel  = LightWidget()
-        left_panel      = LightWidget()
-        top_right_panel = LightWidget(border_radius=True)
-        middle_panel    = DarkWidget (border_radius=True)
-        bottom_panel    = LightWidget(border_radius=True)
-
-        main_window_layout     = QGridLayout(main_window)
-        top_left_panel_layout  = QVBoxLayout(top_left_panel)
-        left_panel_layout      = QVBoxLayout(left_panel)
-        top_right_panel_layout = QVBoxLayout(top_right_panel)
-        middle_panel_layout    = QVBoxLayout(middle_panel)
-        bottom_panel_layout    = QVBoxLayout(bottom_panel)
+        main_window = DarkWidget ("QGrid", border_radius=True)
+        settings    = LightWidget("QVBox", border_radius=True)
+        tag_area    = LightWidget("QVBox", border_radius=True)
+        tabs_area   = LightWidget("QHBox", border_radius=True)
+        center_area = DarkWidget ("QVBox", border_radius=True)
+        bottom_area = LightWidget("QVBox", border_radius=True)
 
         self.setCentralWidget(main_window)
 
-        main_window_layout.setSpacing(0)
+        main_window.BooruLayout.setSpacing(0)
 
-        main_window_layout.addWidget(top_left_panel,  0, 0, 1, 1)
-        main_window_layout.addWidget(top_right_panel, 0, 1, 1, 1)
-        main_window_layout.addWidget(left_panel,      1, 0, 2, 1) 
-        main_window_layout.addWidget(middle_panel,    1, 1, 1, 1)
-        main_window_layout.addWidget(bottom_panel,    2, 1, 1, 1)
+        main_window.BooruLayout.addWidget(settings,    0, 0, 1, 1)
+        main_window.BooruLayout.addWidget(tabs_area,   0, 1, 1, 1)
+        main_window.BooruLayout.addWidget(tag_area,    1, 0, 2, 1) 
+        main_window.BooruLayout.addWidget(center_area, 1, 1, 1, 1)
+        main_window.BooruLayout.addWidget(bottom_area, 2, 1, 1, 1)
 
-        main_window_layout.    setContentsMargins(10,10,10,10)
-        top_left_panel_layout. setContentsMargins(2,2,2,2)
-        top_right_panel_layout.setContentsMargins(2,2,2,2)
-        left_panel_layout.     setContentsMargins(2,2,2,2)
-        middle_panel_layout.   setContentsMargins(2,2,2,2)
-        bottom_panel_layout.   setContentsMargins(2,2,2,2)
+        main_window.BooruLayout.setContentsMargins(10,10,10,10)
+        settings.   BooruLayout.setContentsMargins(2,2,2,2)
+        tabs_area.  BooruLayout.setContentsMargins(2,2,2,2) 
+        tag_area.   BooruLayout.setContentsMargins(2,2,2,2)
+        center_area.BooruLayout.setContentsMargins(2,2,2,2)
+        bottom_area.BooruLayout.setContentsMargins(2,2,2,2)
 
-        main_window_layout.setRowStretch(0, 1)
-        main_window_layout.setRowStretch(1, 50)
-        main_window_layout.setRowStretch(2, 1)
+        main_window.BooruLayout.setRowStretch(0, 1)
+        main_window.BooruLayout.setRowStretch(1, 50)
+        main_window.BooruLayout.setRowStretch(2, 1)
 
-        main_window_layout.setColumnStretch(0, 2)
-        main_window_layout.setColumnStretch(1, 30)
+        main_window.BooruLayout.setColumnStretch(0, 2)
+        main_window.BooruLayout.setColumnStretch(1, 30)
 
-        #main widgets
-        settings_bar       = QWidget()
-        tab_bar            = QWidget()
-        tag_panel          = QWidget()
-        self.media_bar     = MediaBar(main_window)
-        media_viewer       = QWidget()
-        media_display_area = DarkWidget()
-        status_bar         = QWidget()
+        tabs_area.setMinimumWidth(300)
+        tag_area .setMinimumWidth(200)
+
+        settings .setMinimumHeight(30)
+        tag_area .setMinimumHeight(500)
+       
+        bottom_area.setMinimumHeight(30)
+
+        #settings widget
+
+        tab_bar      = TabBar()
+        media_area   = QWidget()
+        media_viewer = MediaViewer(media_area)
+        media_bar    = MediaBar(main_window, media_viewer)
+
+        media_area.setStyleSheet("border-top-left-radius: 0px; border-top-right-radius: 0px;")
+
+
+        media_area_layout = QVBoxLayout(media_area)
         
-        media_viewer_layout       = QVBoxLayout(media_viewer)
-        media_display_area_layout = QHBoxLayout(media_display_area)
 
-        tab_bar.  setMinimumWidth(300)
-        tag_panel.setMinimumWidth(200)
 
-        settings_bar.setMinimumHeight(30)
-        tag_panel.   setMinimumHeight(500)
-        status_bar.  setMinimumHeight(30)
+        tabs_area._layout  .addWidget(tab_bar)
+        center_area._layout.addWidget(media_bar, 1)
 
-        top_left_panel_layout. addWidget(settings_bar)
-        top_right_panel_layout.addWidget(tab_bar)
-        left_panel_layout.     addWidget(tag_panel)
-        middle_panel_layout.   addWidget(media_viewer)
-        bottom_panel_layout.   addWidget(status_bar)
-        media_viewer_layout.   addWidget(self.media_bar, 1)
-        media_viewer_layout.   addWidget(media_display_area, 30)
+        center_area._layout.addWidget(media_area, 50)
+        media_area_layout  .addWidget(media_viewer)
 
-        media_display_area_layout.setContentsMargins(5,0,5,5)
-        media_viewer_layout.      setContentsMargins(0,0,0,0)
 
-        media_viewer_layout.setSpacing(0)
+        tabs_area._layout  .setContentsMargins(0,0,0,0)
+
+        center_area._layout.setContentsMargins(0,0,0,0)
+
+        center_area._layout.setSpacing(0)
+
+        
+     
 
     
         
-        #media_display_area.setStyleSheet("background-color: white;")
+        #media_display_area.setStyleSheet("background-color: white;")"""
+
+    
   
        
 
