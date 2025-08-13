@@ -1,14 +1,14 @@
 {
+    "profile": {
+        "current_profile": "cars"
+    },
     "theme": {
         "mode": "booru"
     },
-    "main_window": {
+    "media_viewer": {
         "amount_per_page": 25,
         "size": 256,
         "layout": "fit"
-    },
-    "window": {
-        "fullscreen": false
     },
     "first_open": {
         "show_tips": true
