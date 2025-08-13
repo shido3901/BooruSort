@@ -1,9 +1,18 @@
 from PyQt5.QtWidgets import QMessageBox, QCheckBox, QDialog, QVBoxLayout, QLabel, QTextEdit, QPushButton, QWidget, QLayout, QSizePolicy, QHBoxLayout, QLineEdit, QProgressBar, QGridLayout, QScrollArea
-from PyQt5.QtCore import Qt, QRect, QTimer, QPoint
+from PyQt5.QtCore import Qt, QRect, QTimer, QPoint, pyqtSignal, QObject
 from PyQt5.QtGui import QGuiApplication, QPainter, QColor, QPen, QFontMetrics
 
-import json, os
 
+class InformationMessage(QObject):
+    text = pyqtSignal(str)
+
+message_signal = InformationMessage()
+
+def notification_message(text):
+
+    message_signal.text.emit(text)
+
+    
 
 
 class Theme:
@@ -46,6 +55,8 @@ class Theme:
        
         self.theme = theme
         self._set_colors()
+
+
 
 
 
@@ -100,6 +111,27 @@ class DarkWidget(BooruWidget):
             theme.border_color_style,
             border_radius
         )
+
+    
+class InformationBar(QWidget): 
+    def __init__(self, text=None):
+        super().__init__()
+        
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0,0,0,0)
+
+        self.text_label = QLabel(text)
+        self.text_label.setStyleSheet("color:white; font-size: 12px;")
+        layout.addWidget(self.text_label)
+
+        self.clear_timer = QTimer()
+        self.clear_timer.setSingleShot(True)
+        self.clear_timer.timeout.connect(self.text_label.clear)
+
+    def change_text(self, text):
+        self.clear_timer.stop()
+        self.text_label.setText(text)
+        self.clear_timer.start(2500)
         
 class DragSelectionBox(QWidget):
     def __init__(self, parent=None):
@@ -115,6 +147,7 @@ class DragSelectionBox(QWidget):
         return QRect()
 
     def paintEvent(self, event):
+
         if self.start_point and self.end_point:
             painter = QPainter(self)
             painter.setRenderHint(QPainter.Antialiasing)
@@ -141,6 +174,7 @@ class SearchBar(QLineEdit):
         self.search_results.hide()
 
         self.textChanged.connect(self.on_text_changed)
+        
 
     def on_text_changed(self, text):
        
@@ -148,18 +182,24 @@ class SearchBar(QLineEdit):
             search_bar_position = self.mapTo(self.parent_widget, QPoint(0, 0))
 
             self.search_results.move(search_bar_position.x(), search_bar_position.y() + self.height())
-            self.setStyleSheet("color:white; border-color: white;")
+            
 
             self.search_results.show()
         else:
-            self.setStyleSheet("color:white;")
+            
             self.search_results.hide()
 
-    def eventFilter(self, a0, a1):
+    def mousePressEvent(self, a0):
+        self.setStyleSheet("color:white; border-color: white;")
+        return super().mousePressEvent(a0)
+    
+    def focusOutEvent(self, a0):
+        self.setStyleSheet("color:white;")
+        self.search_results.hide()
+        
+        return super().focusOutEvent(a0)
 
-
-        return super().eventFilter(a0, a1)
-
+    
 class Scroll(QScrollArea):
     def __init__(self):
         super().__init__()

@@ -1,6 +1,10 @@
 import sqlite3
-from config.profile_config import CategoryManager
-from config.ui_config import MessageBox
+from PyQt5.QtCore import pyqtSignal, QObject, QRunnable, QThreadPool
+
+
+from config.booru_ui import notification_message as notify
+#from config.profile_config import CategoryManager
+#from config.ui_config import MessageBox
 
 from db.tags import Tags
 from db.categories import Categories
@@ -8,31 +12,39 @@ from db.groups import Groups
 from db.pairs import Pairs
 from db.files import Files
 
+default_tag_list = [
+    "image",
+    "video",
+    "animated",
+    "1080p",
+    "4k",
+    "horizontal",
+    "vertical",
+    "square",
+    "highres"
+    
+]
 
 class BooruDb():
     def __init__(self, db_name="db/booru.db", main_window=None):
 
-        self.db_name = db_name        
+        self.current_profile = None
+
+        self.db_name     = db_name        
         self.main_window = main_window
         
-        self.conn = sqlite3.connect(db_name)
+        self.conn   = sqlite3.connect(db_name)
         self.cursor = self.conn.cursor()
 
-        self.current_profile = None
-        self.cursor.execute("PRAGMA foreign_keys = ON")
+        self.threadpool = QThreadPool()
 
-        self.create_tables() #Remember to do double check this
-
-    def initClass(self):
-
-        self.tags = Tags(db=self)
+        self.tags       = Tags(db=self)
         self.categories = Categories(db=self)
-        self.groups = Groups(db=self)
-        self.pairs = Pairs(db=self)
-        self.files = Files(db=self)
+        self.groups     = Groups(db=self)
+        self.pairs      = Pairs(db=self)
+        self.files      = Files(db=self)
 
-    def create_tables(self):
-
+        self.cursor.execute("PRAGMA foreign_keys = ON")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS profiles (
                 id INTEGER PRIMARY KEY,
@@ -43,10 +55,11 @@ class BooruDb():
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS category (
                 category_id INTEGER PRIMARY KEY,
-                profile_id INTEGER,
+                profile_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
                 color TEXT NOT NULL,
                 FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+                UNIQUE(profile_id, name)            
             )
         """)
 
@@ -54,9 +67,11 @@ class BooruDb():
             CREATE TABLE IF NOT EXISTS tags (
                 id INTEGER PRIMARY KEY,
                 profile_id INTEGER,
-                name TEXT UNIQUE NOT NULL, 
+                name TEXT NOT NULL, 
                 count INTEGER,
+                notes TEXT,
                 FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+                UNIQUE(profile_id, name)            
             )
         """)
 
@@ -64,13 +79,14 @@ class BooruDb():
             CREATE TABLE IF NOT EXISTS files (
                 id INTEGER PRIMARY KEY,
                 profile_id INTEGER,
-                path TEXT UNIQUE NOT NULL,
+                path TEXT NOT NULL,
                 thumbnail_name TEXT NOT NULL,
                 type TEXT NOT NULL,
                 length TEXT,
                 date TEXT NOT NULL,
                 notes TEXT,
                 FOREIGN KEY(profile_id) REFERENCES profiles(id)
+                UNIQUE(profile_id, path)
             )
         """)
 
@@ -128,97 +144,106 @@ class BooruDb():
 
         self.conn.commit()
 
-    def get_profile_list(self):
+    def load_db_info(self, current_profile: str):
 
-        self.cursor.execute("SELECT profile_name FROM profiles")
-        profile_list = [row[0] for row in self.cursor.fetchall()]
-        return profile_list
-       
-    def set_curr_profile(self, name):
+        self.profile_config      = self.main_window.profile_config
+        self.profile_config_json = self.main_window.profile_config.profile_config_json
 
-       if self.current_profile != name:
-            self.current_profile = name
-            self.category_manager = CategoryManager(self.current_profile)
-    
-            if name is not None:
+        self.current_profile = current_profile
 
-                
-                self.profile_id = self.get_profile_id()
-                self.load_info()
+        self.profile_id: int = self.get_profile_id()
 
-    def get_curr_profile(self):
-        return self.current_profile
-                   
-    def get_profile_id(self):
+        notify(f"loaded profile id '{self.profile_id}'")
 
-        self.cursor.execute("SELECT id FROM profiles WHERE profile_name = ?", (self.current_profile,))
-        profile = self.cursor.fetchone()
-        profile_id = profile[0]
-  
-        return profile_id
-    
-    def add_profile(self, name):
-        with self.conn:
-            self.cursor.execute("INSERT OR IGNORE INTO profiles (profile_name) VALUES (?)", (name,))
+        self.verify_db() #tags and category
 
-            self.current_profile = name
-            self.profile_id = self.get_profile_id()
-
-            cat_name = "tags"
-            color = "#FFFFFF"
-            self.add_category(cat_name, color)
-            self.load_info()
-
-    def load_info(self):
-
-        
-
-
-        self.set_category_list()
-        self.set_tag_info()
-        self.set_file_count()
-        self.set_window_title()
-
-        """print(f"Current profile: {self.current_profile}")
-        print(f"Profile ID: {self.profile_id}")
-        print(f"Category Info: {self.category_info}")
+    def verify_db(self):
+        notify("verifying db..")
       
-        print(f"Tag Count: {self.count}")
-        print(f"File Count: {self.file_count}")"""
+        with self.conn:
 
-    def set_category_list(self):
+            self.check_category_in_db()
+            self.load_category_list()
+
+            missing_tags, new_tag_list = self.check_default_tags()
+            
+            if missing_tags:
+
+                notify("missing tags, rebuilding..")
+
+                self.load_tag_info()
+
+                tag_info = [(self.profile_id, tag, 0) for tag in default_tag_list]
+
+                tag_names = [tag_name for tag_name in default_tag_list]
+
+                category_names = ["tags"]
+
+                self.tags.add_tag(new_tag_list, tag_info, tag_names, category_names)
+
+            else:
+        
+                self.load_tag_info()
+
+    def check_category_in_db(self):
+
+        notify("checking categories. .")
+    
+        self.cursor.execute("INSERT OR IGNORE INTO category (profile_id, name, color) VALUES (?, ?, ?)", (self.profile_id, "tags", "#FFFFFF"))
+
+        self.category_list = self.profile_config_json["category"]
+
+        if "tags" not in self.category_list or self.category_list is None:
+
+            self.category_list["tags"] = {}
+            self.category_list["tags"]["color"] = "#FFFFFF"
+            self.profile_config.dump_json(self.profile_config_json)
+
+    def check_default_tags(self) -> list[str]:
+
+        notify("checking tags. .")
+
+        placeholders = ", ".join(["?"] * len(default_tag_list))
+        query = f"SELECT name FROM tags WHERE name IN ({placeholders}) AND profile_id = ?"
+
+        self.cursor.execute(query, (*default_tag_list, self.profile_id))
+
+        existing_tags = {row[0] for row in self.cursor.fetchall()}
+
+        missing_tags  = [tag_name for tag_name in default_tag_list if tag_name not in existing_tags]
+
+        new_tag_list  = [(tag_name, "tags") for tag_name in default_tag_list if tag_name not in existing_tags]
+
+        return missing_tags, new_tag_list
+
+    def load_category_list(self):
+
+        notify("loading categories. .")
         
         self.cursor.execute("SELECT category_id, name, color FROM category WHERE profile_id = ?", (self.profile_id,))
         self.category_info = self.cursor.fetchall()
-        print(f"category info:{self.category_info}")
-      
-        self.cat_color_dict = {name: color for _, name, color in self.category_info}
 
-        print(f"cat color dic {self.cat_color_dict}")
+        self.category_colors_list = {name: color for _, name, color in self.category_info}
        
+        if len(self.category_info) != len(self.category_list):
 
-        self.cat_list = self.category_manager.load_json()
+            notify("category mismatch, rebuilding..")
 
-        if self.cat_list is None:
-            self.cat_list = self.category_manager.dump_json(self.cat_color_dict)
-            print('DUMP NOW')
+            self.category_list = self.category_colors_list
+
+            self.profile_config.dump_json(self.profile_config_json)
+
+            #category_mismatch = MessageBox(f"Category mismatch. Category list may be out of order.", "warning", "BooruSort")
+            #category_mismatch.show()
+
         else:
-            if "tags" in self.cat_list:
-                print('tags detected')
+            notify("synced categories")
 
-        if len(self.category_info) != len(self.cat_list):
-
-            self.cat_list = self.category_manager.dump_json(self.cat_color_dict)
-            self.cat_list = self.category_info
-
-            category_mismatch = MessageBox(f"Category mismatch. Category list may be out of order.", "warning", "BooruSort")
-            category_mismatch.show()
-        else:
-            print('synced category list!')
-
-    def set_tag_info(self):
+    def load_tag_info(self):
 
         self.tag_list = {}
+
+        #self.get_tag_info = DBQuery()
         
         self.cursor.execute("""
             SELECT tags.id, tags.name, tags.count, category.name
@@ -228,12 +253,12 @@ class BooruDb():
             WHERE category.profile_id = ?
         """, (self.profile_id,))
             
-        self.tag_info = self.cursor.fetchall()
+        tag_info = self.cursor.fetchall()
 
-        for id, tag_name, tag_count, category_name in self.tag_info:
+        for id, tag_name, tag_count, category_name in tag_info:
            
-            if category_name in self.cat_list:
-                tag_color = self.cat_list[category_name]
+            if category_name in self.category_list:
+                tag_color = self.category_list[category_name]
          
             self.tag_list[tag_name] = {
                 "id": id,
@@ -242,29 +267,37 @@ class BooruDb():
                 "count": tag_count
             }
 
-            tag_list_ids= []
-
-            for tag_name in self.tag_list:
-                if tag_name in self.tag_list:
-                    tag_id = self.tag_list[tag_name]
-
-                    tag_list_ids.append(tag_id)
-
-
-
-
-        
         #print(f"current tag list is {self.tag_list}")
         self.cursor.execute("SELECT COUNT(*) FROM tags WHERE profile_id = ?", (self.profile_id,))
         self.count = self.cursor.fetchone()[0]
+
+    def add_profile(self, name):
+        with self.conn:
+            self.cursor.execute("INSERT OR IGNORE INTO profiles (profile_name) VALUES (?)", (name,))
+
+    def get_profile_list(self):
+
+        self.cursor.execute("SELECT profile_name FROM profiles")
+        profile_list = [row[0] for row in self.cursor.fetchall()]
+        
+        return profile_list
+    
+    def get_profile_id(self):
+
+        self.cursor.execute("SELECT id FROM profiles WHERE profile_name = ?", (self.current_profile,))
+        profile = self.cursor.fetchone()
+        profile_id = profile[0]
+  
+        return profile_id
 
     def set_file_count(self):
        
         self.cursor.execute("SELECT COUNT(*) FROM files WHERE profile_id = ?", (self.profile_id,))
         self.file_count = self.cursor.fetchone()[0]
+        self.set_window_title()
 
     def set_window_title(self):
-        self.main_window.setWindowTitle(f"BooruSort - {self.current_profile} ({self.get_tag_count()} tags, {self.get_item_count()} items)")
+        self.main_window.setWindowTitle(f"BooruSort - {self.current_profile} ({self.get_tag_count()} tags, 0 items)")
 
     
     def add_items(self, item_list):
@@ -308,7 +341,7 @@ class BooruDb():
         self.conn.commit()
 
     def get_category_info(self):
-        return self.cat_list
+        return self.category_list
 
     def get_tag_info(self):
         return self.tag_list
@@ -323,18 +356,6 @@ class BooruDb():
         result = self.cursor.fetchone()
 
         return result
-    
-    def get_file_tag_info(self, file_path):
-
-        self.cursor.execute("""
-            SELECT tags.id, tags.name, tags.count
-            FROM files
-            JOIN file_tags ON files.id = file_tags.file_id
-            JOIN tags ON file_tags.tag_id = tags.id
-            WHERE files.path = ?
-        """, (file_path,))
-
-        return self.cursor.fetchall()
     
     def load_items(self, tag_names):
             
@@ -375,3 +396,17 @@ class BooruDb():
 
 
         
+class DBQuerySignals(QObject):
+            images_ready = pyqtSignal(object, str)
+
+class DBQuery(QRunnable):
+    def __init__(self, batch_info, parent=None):
+        super().__init__()
+
+        self.signals = DBQuerySignals(parent)
+        self.batch_info = batch_info
+       
+
+    def run(self):
+
+            pass
