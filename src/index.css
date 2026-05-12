@@ -1,0 +1,84 @@
+html, body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background-color: #08306b;
+}
+
+.app {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 5px;
+  padding: 5px;
+  box-sizing: border-box;
+  background-color: #08306b;
+}
+
+/* Left panel */
+.left-panel {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  gap: 5px;
+}
+
+/* Right panel */
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* fills remaining width */
+  gap: 5px;
+}
+
+/* Panels */
+.panel {
+  background-color: #0d4ea2;
+  color: white;
+  padding: 5px;
+  border-radius: 5px;
+  box-sizing: border-box;
+  border: 1px solid #888888;
+}
+
+/* Left panels */
+.top-left {
+  height: 50px;
+  flex: 0 0 30px; /* do NOT grow or shrink */
+}
+.bottom-left {
+  flex: 1; /* fills remaining height */
+}
+
+/* Right panels */
+.top-right {
+  height: 50px;
+  flex: 0 0 30px; /* do NOT grow or shrink */
+}
+.middle-right {
+  flex: 1;
+  position: relative;   /* required for absolute positioning inside */
+  overflow: hidden;     /* prevents selection box from leaving panel */
+}
+.bottom-right {
+  height: 30px;
+  flex: 0 0 30px; /* fixed height */
+}
+
+
+
+.settings {
+  height: 20px;
+}
+
+
+#middle-panel {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
