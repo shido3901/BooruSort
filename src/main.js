@@ -1,8 +1,8 @@
-import path from 'node:path';
-import started from 'electron-squirrel-startup';
-import { app, BrowserWindow } from 'electron';
-import { initDb, db } from './database.js';
-import { ipcMain } from 'electron';
+import path from 'node:path'
+import started from 'electron-squirrel-startup'
+import { ipcMain } from 'electron'
+import { app, BrowserWindow } from 'electron'
+import { initDb, db, getProfiles, addProfile, deleteProfile } from './database.js'
 
 if (started) {
   app.quit();
@@ -36,49 +36,16 @@ const createWindow = () => {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
 
-  initDb();
-
-  ipcMain.on('open-profile-page', () => {
-
-    const preloadPath = path.join(app.getAppPath(), '.vite/build/preload.js');
-    const profileWindow = new BrowserWindow({
-      width: 400,
-      height: 600,
-      resizable: false,
-      title: "Select Profile",
-      webPreferences: {
-        preload: preloadPath,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
-
-    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-      profileWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}#profiles`);
-    } else {
-      profileWindow.loadFile(path.join(app.getAppPath(), `.vite/renderer/${MAIN_WINDOW_VITE_NAME}/index.html`), {
-        hash: 'profiles'
-      });
-    }
-  });
-
-   /* ipcMain.handle('get-tags', (event, query) => {
-    const statement = db.prepare('SELECT * FROM tags WHERE name LIKE ?');
-    return statement.all(`%${query}%`);
-  }); */
-
-  createWindow();
-  
+  initDb()
+  createWindow()
 
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createWindow()
     }
   });
-
-
 });
 
 // Quit when all windows are closed, except on macOS. There, it's common
@@ -92,3 +59,42 @@ app.on('window-all-closed', () => {
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
+
+ipcMain.handle('get-profiles', async () => {
+    const profileList = getProfiles()
+    return profileList
+})
+
+ipcMain.handle('add-profile', async (event, name) => {
+    const newProfile = addProfile(name)
+    return newProfile
+})
+
+ipcMain.handle('delete-profile', async (event, name) => {
+    const currentProfile = deleteProfile(name)
+    return currentProfile
+})
+
+ipcMain.on('open-profile-page', () => {
+
+  const preloadPath = path.join(app.getAppPath(), '.vite/build/preload.js');
+  const profileWindow = new BrowserWindow({
+    width: 400,
+    height: 600,
+    resizable: false,
+    title: "Select Profile",
+    webPreferences: {
+      preload: preloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    profileWindow.loadURL(`${MAIN_WINDOW_VITE_DEV_SERVER_URL}#profiles`);
+  } else {
+    profileWindow.loadFile(path.join(app.getAppPath(), `.vite/renderer/${MAIN_WINDOW_VITE_NAME}/index.html`), {
+      hash: 'profiles'
+    })
+  }
+})

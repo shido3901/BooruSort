@@ -1,33 +1,32 @@
-import './Searchbar.css';
-import React, { useState, useEffect } from 'react';
+import './Searchbar.css'
+import React, { useState, useEffect } from 'react'
 
 const Searchbar = () => {
     
-  const [tagListSearch, setTagListSearch] = useState("");
-  const [filteredTags, setFilteredTags] = useState([]);
+  const [tagListSearch, setTagListSearch] = useState("")
+  const [filteredTags, setFilteredTags] = useState([])
 
   useEffect(() => {
     const fetchTags = async () => {
-      const query = tagListSearch.trim();
+      const query = tagListSearch.trim()
 
       if (query !== "") {
         try {
     
-          const results = await window.electron.getTags(query);
+          const results = await window.electron.getTags(query)
           
-          setFilteredTags(Array.isArray(results) ? results : []);
+          setFilteredTags(Array.isArray(results) ? results : [])
         } catch (error) {
-          console.error("Database query failed:", error);
-          setFilteredTags([]);
+          console.error("Database query failed:", error)
+          setFilteredTags([])
         }
       } else {
-        setFilteredTags([]);
+        setFilteredTags([])
       }
     };
 
-    // This runs every time the user types
-    fetchTags();
-  }, [tagListSearch]);
+    fetchTags()
+  }, [tagListSearch])
 
   
     return (
@@ -55,4 +54,4 @@ const Searchbar = () => {
     );
 };
 
-export default Searchbar;
+export default Searchbar
