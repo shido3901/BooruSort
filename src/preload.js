@@ -1,2 +1,8 @@
-// See the Electron documentation for details on how to use preload scripts:
-// https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('electron', {
+  openProfilePage: () => ipcRenderer.send('open-profile-page'),
+  getProfiles: () => ipcRenderer.invoke('get-profiles'),
+  getTags: (query) => ipcRenderer.invoke('get-tags', query)
+});
+
