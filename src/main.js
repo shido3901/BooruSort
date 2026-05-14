@@ -14,6 +14,7 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
+    backgroundColor: '#08306b',
     webPreferences: {
       preload: preloadPath, 
       contextIsolation: true,
@@ -60,20 +61,22 @@ app.on('window-all-closed', () => {
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
 
-ipcMain.handle('get-profiles', async () => {
-    const profileList = getProfiles()
-    return profileList
+ipcMain.handle('db-query', async (event, { type, info }) => {
+
+    const query = dbQuery[type]
+
+    if (query) {
+        return query(info)
+    } else {
+        console.error(`query type "${type}" not found`)
+    }
 })
 
-ipcMain.handle('add-profile', async (event, name) => {
-    const newProfile = addProfile(name)
-    return newProfile
-})
-
-ipcMain.handle('delete-profile', async (event, name) => {
-    const currentProfile = deleteProfile(name)
-    return currentProfile
-})
+const dbQuery = {
+  'get-profiles': () => getProfiles(),
+  'add-profile': (name) => addProfile(name),
+  'delete-profile': (name) => deleteProfile(name),
+}
 
 ipcMain.on('open-profile-page', () => {
 
@@ -83,6 +86,7 @@ ipcMain.on('open-profile-page', () => {
     height: 600,
     resizable: false,
     title: "Select Profile",
+    backgroundColor: '#08306b',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -97,4 +101,10 @@ ipcMain.on('open-profile-page', () => {
       hash: 'profiles'
     })
   }
+
+  ipcMain.once('close-profile-page', () => {
+    if (!profileWindow.isDestroyed()) {
+      profileWindow.close()
+    }
+  });
 })

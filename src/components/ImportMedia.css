@@ -1,0 +1,14 @@
+.media-button {
+
+  background-color: #333;
+  color: white;
+  border: none;
+  border-radius: 5px; 
+  cursor: pointer;
+  font-size: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+}
+

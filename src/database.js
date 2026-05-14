@@ -20,6 +20,7 @@ function initDb() {
     }
     
     db = new Database(dbPath);
+    db.pragma('foreign_keys = ON');
     
     const createTables = db.transaction(() => {
 
@@ -33,19 +34,38 @@ function initDb() {
         db.prepare(`
             CREATE TABLE IF NOT EXISTS tags (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE
+                name TEXT NOT NULL,
+                profile_id INTEGER,
+                count INTEGER DEFAULT 0,
+                FOREIGN KEY(profile_id) REFERENCES profile(id) ON DELETE CASCADE,
+                UNIQUE(profile_id, name)  
             )
         `).run()
 
         db.prepare(`
             CREATE TABLE IF NOT EXISTS media (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                type TEXT,
+                profile_id INTEGER,
                 path TEXT NOT NULL,
+                thumbnail_name TEXT NOT NULL,
+                type TEXT NOT NULL,
                 length TEXT,
-                date TEXT
+                date TEXT NOT NULL,
+                FOREIGN KEY(profile_id) REFERENCES profile(id) ON DELETE CASCADE,
+                UNIQUE(profile_id, path)
             )
         `).run()
+
+        db.prepare(`
+            CREATE TABLE IF NOT EXISTS file_tags (
+                file_id INTEGER,
+                tag_id INTEGER,
+                PRIMARY KEY(file_id, tag_id),
+                FOREIGN KEY(file_id) REFERENCES media(id) ON DELETE CASCADE,
+                FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+        `).run()
+
     });
 
     createTables();
@@ -106,16 +126,3 @@ export function deleteProfile(name) {
     return { success: false, error: err.message }
   }
 }
-
-const mockTags = [
-  { id: 1, name: 'landscape', count: 12 },
-  { id: 2, name: 'character', count: 3 },
-  { id: 3, name: 'digital art', count: 5 },
-  { id: 4, name: 'sketch', count: 82 },
-  { id: 5, name: 'wallpaper', count: 23 }
-];
-
-export const tagList = () => {
-  return mockTags; 
-};
-

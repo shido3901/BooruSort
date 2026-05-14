@@ -23,7 +23,7 @@ export const ProfilePage = () => {
 
   useEffect(() => {
     const loadData = async () => {
-      const profileList = await window.electron.getProfiles()
+      const profileList = await window.electron.db('get-profiles')
       setProfiles(profileList)
     }
     loadData();
@@ -35,10 +35,10 @@ export const ProfilePage = () => {
       return;
     }
 
-    const result = await window.electron.addProfile(newProfileName)
+    const result = await window.electron.db('add-profile', newProfileName)
     
     if (result.success) {
-      const data = await window.electron.getProfiles()
+      const data = await window.electron.db('get-profiles')
       setProfiles(data)
       setNewProfileName("")
       setIsModalOpen(false)
@@ -48,7 +48,8 @@ export const ProfilePage = () => {
   }
 
   const openButton = () => {
-    console.log("Opening:", currentProfile.name)
+    console.log("Loading:", currentProfile.name)
+    window.electron.closeProfilePage()
   }
 
   const addButton = () => {
@@ -68,21 +69,17 @@ export const ProfilePage = () => {
     const confirmed = confirm(`Delete "${currentProfile.name}"?`)
     
     if (confirmed) {
-      const result = await window.electron.deleteProfile(currentProfile.name)
+      const result = await window.electron.db('delete-profile', currentProfile.name)
 
       if (result.success) {
         
-        const data = await window.electron.getProfiles()
+        const data = await window.electron.db('get-profiles')
         setProfiles(data)
         setCurrentProfile(null)
       } else {
         alert("Could not delete:" + result.error)
       }
     }
-  }
-
-  const selectCurrentProfile = (user) => {
-    setCurrentProfile(user)
   }
 
   const textInput = (e) => {
@@ -116,7 +113,7 @@ export const ProfilePage = () => {
           <div 
             key={user.id} 
             className={`active-profile-buttons ${currentProfile?.id === user.id ? 'active' : ''}`}
-            onClick={() => selectCurrentProfile(user)}
+            onClick={() => setCurrentProfile(user)}
           >
             {user.name}
           </div>
