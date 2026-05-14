@@ -9,7 +9,7 @@ export const Profiles = () => {
 
   return (
     <div className="profiles-container">
-      <button className="open-profile-button" onClick={openProfilePage}>👤</button>
+      <button className="open-profile-button" onClick={openProfilePage}>profile</button>
     </div>
   )
 }
