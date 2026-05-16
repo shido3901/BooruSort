@@ -1,7 +1,7 @@
 import path from 'node:path'
 import started from 'electron-squirrel-startup'
 import { ipcMain } from 'electron'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Menu } from 'electron'
 import { initDb, db, getProfiles, addProfile, deleteProfile } from './database.js'
 
 if (started) {
@@ -12,15 +12,20 @@ const createWindow = () => {
 
   const preloadPath = path.join(app.getAppPath(), '.vite/build/preload.js');
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1280,
+    height: 720,
     backgroundColor: '#08306b',
     webPreferences: {
       preload: preloadPath, 
       contextIsolation: true,
       nodeIntegration: false,
+     
+
     },
   });
+
+  mainWindow.setMenu(null)
+  
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
@@ -28,9 +33,10 @@ const createWindow = () => {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
-  /* Open the DevTools.
-  mainWindow.webContents.openDevTools(); */
+  //Open the DevTools.
+  //mainWindow.webContents.openDevTools();
 };
+
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.

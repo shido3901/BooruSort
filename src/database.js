@@ -71,6 +71,7 @@ function initDb() {
     createTables();
     console.log("Database initialized at ", dbPath);
 
+    //TO DO: Check BOTH User Folder and Db file
 
     if (newProfile) {
         console.log("Creating profile")
