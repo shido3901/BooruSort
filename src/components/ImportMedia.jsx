@@ -44,7 +44,20 @@ export const ImportMediaPage = () => {
 
   const handleBoxClick = () => {
     
-    fileInputRef.current.click();
+    fileInputRef.current.click()
+  }
+
+  const currentTagList = useRef(null)
+
+  const ImportMedia = () => {
+
+    const finalTagList = currentTagList.current.value
+      .split(/\s+/)
+      .map(tag => tag.trim())
+      .filter(tag => tag !== '')
+
+    console.log("importing tags:", finalTagList)
+    
   }
 
   return (
@@ -70,13 +83,15 @@ export const ImportMediaPage = () => {
       </div>
 
       <div className="import-area">
-        <textarea 
+        <textarea
+          ref={currentTagList}
           type="text"
           className="tag-box" 
           placeholder="enter tags (e.g. nature, cute_cat)"
           spellCheck="false"
         />
-        <button className="import-media">+</button>
+        <button 
+          className="import-media" onClick={ImportMedia}>+</button>
       </div>
     </div>
   )
