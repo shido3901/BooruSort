@@ -68,12 +68,16 @@ export const ImportMediaPage = () => {
         <p>drag media here </p>
         <p>or click to browse</p>
       </div>
-    
-      <textarea 
-        type="text"
-        className="tag-box" 
-        placeholder="enter tags (e.g. nature, cute_cat)"
-      />
+
+      <div className="import-area">
+        <textarea 
+          type="text"
+          className="tag-box" 
+          placeholder="enter tags (e.g. nature, cute_cat)"
+          spellCheck="false"
+        />
+        <button className="import-media">+</button>
+      </div>
     </div>
   )
 }

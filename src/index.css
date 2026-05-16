@@ -5,7 +5,7 @@ html, body, #root {
   width: 100%;
   height: 100%;
   margin: 0;
-  background-color: #08306b;
+  background-color: #052048;
 }
 
 .app {
@@ -15,7 +15,7 @@ html, body, #root {
   gap: 5px;
   padding: 5px;
   box-sizing: border-box;
-  background-color: #08306b;
+  background-color: #052048;
 }
 
 .left-panel {
@@ -33,12 +33,12 @@ html, body, #root {
 }
 
 .panel {
-  background-color: #0d4ea2;
+  background-color: #093978;
   color: white;
   padding: 5px;
   border-radius: 5px;
   box-sizing: border-box;
-  border: 1px solid #888888;
+  border: 1px solid #0029a3;
 }
 
 .top-left {
